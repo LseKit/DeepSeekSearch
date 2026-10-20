@@ -1,0 +1,476 @@
+// 文件名: config.go
+// 用途: 定义配置结构体、内置默认值与脱敏/来源查询，字段与 13-配置契约 §二 逐键对应。
+// 创建日期: 2026-10-21
+// 作者: 小逸
+// 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
+
+package config
+
+import (
+	"maps"
+	"reflect"
+	"strings"
+)
+
+// SourceKind 标识配置来源层级。
+type SourceKind string
+
+const (
+	// SourceDefault 表示该值来自内置默认值。
+	SourceDefault SourceKind = "default"
+	// SourceFile 表示该值来自 config.toml。
+	SourceFile SourceKind = "file"
+	// SourceDotEnv 表示该值来自 Config/.env。
+	SourceDotEnv SourceKind = "dotenv"
+	// SourceEnv 表示该值来自真实环境变量。
+	SourceEnv SourceKind = "env"
+	// SourceUnknown 表示 key 不是已知配置项（多半是拼错了）。
+	SourceUnknown SourceKind = "unknown"
+)
+
+// Config 是启动后不再变更的配置快照。
+// 全部字段在 Load 中填充、在 Validate 中校验，运行期只读。
+// 顶层 section 字段故意不带 toml tag：CheckDocDrift 会把 tag 当作配置键，
+// 给段名加 tag 会让「代码有而文档无」。子段按字段名大小写不敏感匹配。
+type Config struct {
+	App       AppConfig
+	Server    ServerConfig
+	Upstream  UpstreamConfig
+	RateLimit RateLimitConfig
+	Timeout   TimeoutConfig
+	Retry     RetryConfig
+	Circuit   CircuitConfig
+	Limits    LimitsConfig
+	Cache     CacheConfig
+	Dedupe    DedupeConfig
+	Search    SearchConfig
+	Security  SecurityConfig
+	Log       LogConfig
+	Synth     SynthConfig
+	ApiKey    string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
+	HttpToken string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
+	sources   map[string]SourceKind `toml:"-" json:"-"`
+}
+
+// AppConfig 管程序自身标识，只影响日志与 MCP serverInfo 的展示。
+type AppConfig struct {
+	Name    string `toml:"name"`
+	Version string `toml:"version"`
+}
+
+// ServerConfig 管「怎么和客户端说话」。
+type ServerConfig struct {
+	Transport string           `toml:"transport"`
+	Http      ServerHttpConfig //nolint:revive // 契约字段名，见 Task-03 A-01 骨架
+}
+
+// ServerHttpConfig 只在 Transport == "streamable-http" 时生效。
+// 默认值全部指向最安全的一端：只听回环、开 Origin 校验、开 Host 校验、不鉴权。
+type ServerHttpConfig struct { //nolint:revive // 契约类型名，见 Task-03 A-01 骨架
+	Host                        string   `toml:"host"`
+	Port                        int      `toml:"port"`
+	Path                        string   `toml:"path"`
+	JsonResponse                bool     `toml:"json_response"` //nolint:revive // 契约字段名
+	MaxRequestBodyBytes         int64    `toml:"max_request_body_bytes"`
+	DisableLocalhostProtection  bool     `toml:"disable_localhost_protection"`
+	EnableCrossOriginProtection bool     `toml:"enable_cross_origin_protection"`
+	AllowedOrigins              []string `toml:"allowed_origins"`
+	AllowNonLocalHost           bool     `toml:"allow_non_local_host"`
+	HealthzPath                 string   `toml:"healthz_path"`
+	AuthEnabled                 bool     `toml:"auth_enabled"`
+	AuthTokenEnv                string   `toml:"auth_token_env"`
+}
+
+// UpstreamConfig 管上游 DeepSeek HTTP API 的连接参数。
+type UpstreamConfig struct {
+	BaseURL          string `toml:"base_url"`
+	TimeoutMs        int    `toml:"timeout_ms"`
+	SelfTestOnStart  bool   `toml:"self_test_on_start"`
+	UserAgent        string `toml:"user_agent"`
+	MaxResponseBytes int64  `toml:"max_response_bytes"`
+}
+
+// RateLimitConfig 管令牌桶与在飞并发额度。
+type RateLimitConfig struct {
+	MaxInflight int     `toml:"max_inflight"`
+	SearchShare float64 `toml:"search_share"`
+	MaxWaitMs   int     `toml:"max_wait_ms"`
+	Search      RateLimitBucketConfig
+	Fetch       RateLimitBucketConfig
+	Warn        RateLimitWarnConfig
+}
+
+// RateLimitBucketConfig 是单个工具的令牌桶参数；search 与 fetch 各自独立。
+type RateLimitBucketConfig struct {
+	Rps   float64 `toml:"rps"`
+	Burst int     `toml:"burst"`
+}
+
+// RateLimitWarnConfig 管不阻断请求的调用量软告警。
+type RateLimitWarnConfig struct {
+	WindowS     int   `toml:"window_s"`
+	WarnAtCalls []int `toml:"warn_at_calls"`
+}
+
+// TimeoutConfig 管分层超时：底层连接参数与两个工具各自的尝试预算。
+type TimeoutConfig struct {
+	DialMs           int `toml:"dial_ms"`
+	TLSHandshakeMs   int `toml:"tls_handshake_ms"`
+	ResponseHeaderMs int `toml:"response_header_ms"`
+	Search           TimeoutToolConfig
+	Fetch            TimeoutToolConfig
+}
+
+// TimeoutToolConfig 是单个工具的单次尝试与总时长预算。
+type TimeoutToolConfig struct {
+	PerAttemptMs   int `toml:"per_attempt_ms"`
+	MaxAttempts    int `toml:"max_attempts"`
+	TotalTimeoutMs int `toml:"total_timeout_ms"`
+}
+
+// RetryConfig 管重试开关、退避表与重试预算。
+type RetryConfig struct {
+	Enabled         bool     `toml:"enabled"`
+	JitterMode      string   `toml:"jitter_mode"`
+	FixedMs         []int    `toml:"fixed_ms"`
+	SpreadMs        []int    `toml:"spread_ms"`
+	ParseQPSFrom429 bool     `toml:"parse_qps_from_429"`
+	AdaptCooldownS  int      `toml:"adapt_cooldown_s"`
+	RetryOn         []string `toml:"retry_on"`
+	Budget          RetryBudgetConfig
+}
+
+// RetryBudgetConfig 用于封顶重试放大比例，防止上游变慢时形成重试风暴。
+type RetryBudgetConfig struct {
+	Enabled bool    `toml:"enabled"`
+	Ratio   float64 `toml:"ratio"`
+	WindowS int     `toml:"window_s"`
+}
+
+// CircuitConfig 管熔断器的失败阈值、打开时长与半开探测数。
+type CircuitConfig struct {
+	Enabled        bool `toml:"enabled"`
+	FailThreshold  int  `toml:"fail_threshold"`
+	OpenMs         int  `toml:"open_ms"`
+	HalfOpenProbes int  `toml:"half_open_probes"`
+}
+
+// LimitsConfig 管返回内容的字符预算与分节粒度。
+type LimitsConfig struct {
+	MaxTotalChars      int    `toml:"max_total_chars"`
+	DefaultCount       int    `toml:"default_count"`
+	DefaultDetail      string `toml:"default_detail"`
+	SummaryChars       int    `toml:"summary_chars"`
+	MinContentChars    int    `toml:"min_content_chars"`
+	InlineMaxChars     int    `toml:"inline_max_chars"`
+	FixedChunkChars    int    `toml:"fixed_chunk_chars"`
+	OutlineMaxSections int    `toml:"outline_max_sections"`
+	Budget             LimitsBudgetConfig
+}
+
+// LimitsBudgetConfig 管时间窗与自然日的调用次数硬顶，默认全关。
+type LimitsBudgetConfig struct {
+	Enabled           bool `toml:"enabled"`
+	MaxCallsPerWindow int  `toml:"max_calls_per_window"`
+	WindowS           int  `toml:"window_s"`
+	MaxCallsPerDay    int  `toml:"max_calls_per_day"`
+}
+
+// CacheConfig 是省钱的核心：上游原文的 SQLite 快照缓存。
+type CacheConfig struct {
+	Enabled        bool   `toml:"enabled"`
+	Backend        string `toml:"backend"`
+	DbPath         string `toml:"db_path"`
+	TtlFetchS      int    `toml:"ttl_fetch_s"`  //nolint:revive // 契约字段名
+	TtlSearchS     int    `toml:"ttl_search_s"` //nolint:revive // 契约字段名
+	MaxEntries     int    `toml:"max_entries"`
+	MaxBytesMb     int    `toml:"max_bytes_mb"`
+	MaxEntryKb     int    `toml:"max_entry_kb"`
+	WaitMs         int    `toml:"wait_ms"`
+	PruneIntervalS int    `toml:"prune_interval_s"`
+	DegradedOk     bool   `toml:"degraded_ok"`
+}
+
+// DedupeConfig 管无损去重：URL 归一化、转载合并与单域名配额。
+type DedupeConfig struct {
+	Enabled        bool     `toml:"enabled"`
+	MaxPerDomain   int      `toml:"max_per_domain"`
+	MergeReposts   bool     `toml:"merge_reposts"`
+	TrackingParams []string `toml:"tracking_params"`
+}
+
+// SearchConfig 管搜索结果的可选过滤与展示；阶段一默认全部关闭。
+type SearchConfig struct {
+	MinRerank      *float64 `toml:"min_rerank"`
+	MinAuthority   *int     `toml:"min_authority"`
+	MinRerankRatio *float64 `toml:"min_rerank_ratio"`
+	RankField      bool     `toml:"rank_field"`
+}
+
+// SecurityConfig 是上游 SSRF 防护失效时的最后一道 URL 黑名单。
+type SecurityConfig struct {
+	BlockPrivateRanges bool     `toml:"block_private_ranges"`
+	BlockLoopback      bool     `toml:"block_loopback"`
+	BlockLinkLocal     bool     `toml:"block_link_local"`
+	BlockedHosts       []string `toml:"blocked_hosts"`
+	BlockedCIDRs       []string `toml:"blocked_cidrs"`
+}
+
+// LogConfig 管结构化日志的级别、轮转与脱敏。
+type LogConfig struct {
+	Level           string   `toml:"level"`
+	Format          string   `toml:"format"`
+	Dir             string   `toml:"dir"`
+	FilePrefix      string   `toml:"file_prefix"`
+	Timezone        string   `toml:"timezone"`
+	TsFormat        string   `toml:"ts_format"`
+	MaxSizeMb       int      `toml:"max_size_mb"`
+	DailyMaxMb      int      `toml:"daily_max_mb"`
+	MaxAgeDays      int      `toml:"max_age_days"`
+	MaxBackups      int      `toml:"max_backups"`
+	Compress        bool     `toml:"compress"`
+	AlsoStderr      bool     `toml:"also_stderr"`
+	SlowMs          int      `toml:"slow_ms"`
+	MaxBodyLogKb    int      `toml:"max_body_log_kb"`
+	RedactQueryKeys []string `toml:"redact_query_keys"`
+}
+
+// SynthConfig 是阶段二的结果合成配置，阶段一 enabled MUST 为 false。
+type SynthConfig struct {
+	Enabled         bool   `toml:"enabled"`
+	Model           string `toml:"model"`
+	MaxInputChars   int    `toml:"max_input_chars"`
+	MaxOutputTokens int    `toml:"max_output_tokens"`
+}
+
+// Default 返回与 13-配置契约 §三 默认值列逐格一致的内置配置。
+func Default() Config {
+	cfg := Config{
+		App:       defaultApp(),
+		Server:    defaultServer(),
+		Upstream:  defaultUpstream(),
+		RateLimit: defaultRateLimit(),
+		Timeout:   defaultTimeout(),
+		Retry:     defaultRetry(),
+		Circuit:   defaultCircuit(),
+		Limits:    defaultLimits(),
+		Cache:     defaultCache(),
+		Dedupe:    defaultDedupe(),
+		Search:    defaultSearch(),
+		Security:  defaultSecurity(),
+		Log:       defaultLog(),
+		Synth:     defaultSynth(),
+	}
+	cfg.sources = defaultSources(&cfg)
+	return cfg
+}
+
+// Redacted 返回可安全打印与外发的副本：ApiKey/HttpToken 一律替换为 ***。
+// 即使字段为空也替换，避免泄漏「是否配置过凭据」。
+// 值接收者是 11 号 §二 的接口契约，不能改成指针。
+func (c Config) Redacted() Config { //nolint:gocritic // 值接收者由契约固定
+	c.ApiKey = "***"
+	c.HttpToken = "***"
+	c.sources = maps.Clone(c.sources)
+	return c
+}
+
+// Source 返回某个配置项最终取自哪一层；未知 key 返回 SourceUnknown。
+// 值接收者是 11 号 §二 的接口契约，不能改成指针。
+func (c Config) Source(key string) SourceKind { //nolint:gocritic // 值接收者由契约固定
+	if kind, ok := c.sources[key]; ok {
+		return kind
+	}
+	return SourceUnknown
+}
+
+func defaultApp() AppConfig {
+	return AppConfig{Name: "DeepSeekSearch", Version: "v0.1.0"}
+}
+
+func defaultServer() ServerConfig {
+	return ServerConfig{
+		Transport: "streamable-http",
+		Http: ServerHttpConfig{
+			Host:                        "127.0.0.1",
+			Port:                        8765,
+			Path:                        "/mcp",
+			JsonResponse:                true,
+			MaxRequestBodyBytes:         1048576,
+			DisableLocalhostProtection:  false,
+			EnableCrossOriginProtection: true,
+			AllowedOrigins:              []string{},
+			AllowNonLocalHost:           false,
+			HealthzPath:                 "/healthz",
+			AuthEnabled:                 false,
+			AuthTokenEnv:                "DEEPSEEKSEARCH_HTTP_TOKEN",
+		},
+	}
+}
+
+func defaultUpstream() UpstreamConfig {
+	return UpstreamConfig{
+		BaseURL:          "https://api.deepseek.com",
+		TimeoutMs:        60000,
+		SelfTestOnStart:  false,
+		UserAgent:        "",
+		MaxResponseBytes: 8388608,
+	}
+}
+
+func defaultRateLimit() RateLimitConfig {
+	return RateLimitConfig{
+		MaxInflight: 8,
+		SearchShare: 0.5,
+		MaxWaitMs:   30000,
+		Search:      RateLimitBucketConfig{Rps: 30.0, Burst: 60},
+		Fetch:       RateLimitBucketConfig{Rps: 20.0, Burst: 40},
+		Warn:        RateLimitWarnConfig{WindowS: 60, WarnAtCalls: []int{100, 500, 1000}},
+	}
+}
+
+func defaultTimeout() TimeoutConfig {
+	return TimeoutConfig{
+		DialMs:           5000,
+		TLSHandshakeMs:   5000,
+		ResponseHeaderMs: 30000,
+		Search:           TimeoutToolConfig{PerAttemptMs: 12000, MaxAttempts: 4, TotalTimeoutMs: 60000},
+		Fetch:            TimeoutToolConfig{PerAttemptMs: 45000, MaxAttempts: 2, TotalTimeoutMs: 110000},
+	}
+}
+
+func defaultRetry() RetryConfig {
+	return RetryConfig{
+		Enabled:         true,
+		JitterMode:      "fixed_plus_random",
+		FixedMs:         []int{1000, 3000, 8000},
+		SpreadMs:        []int{1000, 2000, 4000},
+		ParseQPSFrom429: true,
+		AdaptCooldownS:  60,
+		RetryOn:         []string{"429", "408", "502", "503", "504", "net_error", "timeout"},
+		Budget:          RetryBudgetConfig{Enabled: true, Ratio: 0.10, WindowS: 60},
+	}
+}
+
+func defaultCircuit() CircuitConfig {
+	return CircuitConfig{Enabled: true, FailThreshold: 5, OpenMs: 15000, HalfOpenProbes: 2}
+}
+
+func defaultLimits() LimitsConfig {
+	return LimitsConfig{
+		MaxTotalChars:      32000,
+		DefaultCount:       10,
+		DefaultDetail:      "summary",
+		SummaryChars:       1200,
+		MinContentChars:    120,
+		InlineMaxChars:     8000,
+		FixedChunkChars:    8000,
+		OutlineMaxSections: 200,
+		Budget:             LimitsBudgetConfig{Enabled: false, MaxCallsPerWindow: 0, WindowS: 3600, MaxCallsPerDay: 0},
+	}
+}
+
+func defaultCache() CacheConfig {
+	return CacheConfig{
+		Enabled:        true,
+		Backend:        "sqlite",
+		DbPath:         "Data/Cache.db",
+		TtlFetchS:      21600,
+		TtlSearchS:     180,
+		MaxEntries:     500,
+		MaxBytesMb:     256,
+		MaxEntryKb:     2048,
+		WaitMs:         8000,
+		PruneIntervalS: 300,
+		DegradedOk:     true,
+	}
+}
+
+func defaultDedupe() DedupeConfig {
+	return DedupeConfig{
+		Enabled:      true,
+		MaxPerDomain: 3,
+		MergeReposts: true,
+		TrackingParams: []string{
+			"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
+			"fbclid", "gclid", "gbraid", "wbraid", "msclkid", "yclid", "dclid", "twclid", "igshid",
+			"mc_cid", "mc_eid", "_hsenc", "_hsmi", "spm", "from", "source", "ref", "ref_src",
+			"share_token", "si",
+		},
+	}
+}
+
+func defaultSearch() SearchConfig {
+	return SearchConfig{RankField: true}
+}
+
+func defaultSecurity() SecurityConfig {
+	return SecurityConfig{
+		BlockPrivateRanges: true,
+		BlockLoopback:      true,
+		BlockLinkLocal:     true,
+		BlockedHosts:       []string{"metadata.google.internal", "metadata", "instance-data"},
+		BlockedCIDRs: []string{
+			"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
+			"169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10",
+			"100.64.0.0/10", "0.0.0.0/8",
+		},
+	}
+}
+
+func defaultLog() LogConfig {
+	return LogConfig{
+		Level:           "info",
+		Format:          "json",
+		Dir:             "Logs",
+		FilePrefix:      "DeepSeekSearch",
+		Timezone:        "Asia/Shanghai",
+		TsFormat:        "2006-01-02 15:04:05.000 -07:00",
+		MaxSizeMb:       50,
+		DailyMaxMb:      500,
+		MaxAgeDays:      7,
+		MaxBackups:      50,
+		Compress:        true,
+		AlsoStderr:      true,
+		SlowMs:          3000,
+		MaxBodyLogKb:    0,
+		RedactQueryKeys: []string{"token", "key", "secret", "password", "code", "sig", "auth"},
+	}
+}
+
+func defaultSynth() SynthConfig {
+	return SynthConfig{Enabled: false, Model: "deepseek-chat", MaxInputChars: 12000, MaxOutputTokens: 800}
+}
+
+// defaultSources 预置全部已知 toml 路径为 default，
+// 让 Source 能区分「未覆盖的已知键」与「拼错的未知键」。
+func defaultSources(cfg *Config) map[string]SourceKind {
+	out := make(map[string]SourceKind, 128)
+	collectSources(reflect.ValueOf(cfg).Elem(), "", out)
+	return out
+}
+
+func collectSources(v reflect.Value, prefix string, out map[string]SourceKind) {
+	typ := v.Type()
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		tag := field.Tag.Get("toml")
+		if tag == "-" {
+			continue
+		}
+		name := tag
+		if name == "" {
+			name = strings.ToLower(field.Name)
+		}
+		path := name
+		if prefix != "" {
+			path = prefix + "." + name
+		}
+		value := v.Field(i)
+		if value.Kind() == reflect.Struct {
+			collectSources(value, path, out)
+			continue
+		}
+		out[path] = SourceDefault
+	}
+}
