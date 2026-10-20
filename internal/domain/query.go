@@ -15,6 +15,7 @@ import (
 
 // SearchRequest 是 ds_search 中参与语法拼装的入参。
 // detail/count/min_rerank 等展示与过滤参数不改变 query 语法，由 Tools 层处理。
+// Count/NeedContent/OriQuestion/Localization 是上游透传字段，BuildQuery 不读它们。
 type SearchRequest struct {
 	Query        string   `json:"query"`
 	Site         []string `json:"site,omitempty"`
@@ -25,6 +26,11 @@ type SearchRequest struct {
 	ExactPhrase  string   `json:"exact_phrase,omitempty"`
 	ExcludeTerms []string `json:"exclude_terms,omitempty"`
 	RawQuery     bool     `json:"raw_query,omitempty"`
+
+	Count        *int    `json:"count,omitempty"`
+	NeedContent  *bool   `json:"need_content,omitempty"`
+	OriQuestion  *string `json:"ori_question,omitempty"`
+	Localization string  `json:"localization,omitempty"`
 }
 
 // BuildQuery 按 12 号 §4.1 的优先级把结构化字段拼成上游 query。
