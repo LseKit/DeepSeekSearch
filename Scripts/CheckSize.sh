@@ -20,7 +20,8 @@ FAIL=0
 
 # CI 语境只有同步产物 docs/、没有 Doc/。TestSizeLimits 固定传 ../../Doc，
 # 若不回退，domain 的 F-S5 豁免加载不到 ⇒ 正确的代码在 CI 里被判违规。
-if [ ! -f "$EXEMPT_FILE" ] && [ -f "$SRC_ROOT/docs/Engineering/豁免台账.md" ]; then
+# 🔴 只在 CI 回退：本地漏传第二个参数仍 MUST 失败，否则「两参签名」失去意义。
+if [ ! -f "$EXEMPT_FILE" ] && [ -n "${CI:-}" ] && [ -f "$SRC_ROOT/docs/Engineering/豁免台账.md" ]; then
   EXEMPT_FILE="$SRC_ROOT/docs/Engineering/豁免台账.md"
   echo "ℹ️  文档根无豁免台账，回退到 $EXEMPT_FILE（CI 语境）"
 fi

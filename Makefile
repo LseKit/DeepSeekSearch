@@ -67,3 +67,27 @@ dist:
 # release 只负责产出发布物；tag/推送/签名由 Scripts/Release.sh 执行（17 号 §七）。
 release: dist
 	@echo "发布物已生成到 ../Bin/；随后运行 bash Scripts/Release.sh 完成 21 项检查与打 tag"
+
+# ---- 质量门禁 ----
+
+.PHONY: size drift repo-files check
+
+# 规模红线 F-S1 / F-S3 / F-S5（F-S2 / F-S4 由 internal/arch_test.go 用 go/ast 强制）
+# 🔴 两参签名 <代码根> <文档根>。开发机在 GitHubSrc/ 下执行，文档根是 ../Doc。
+size:
+	bash Scripts/CheckSize.sh . ../Doc
+
+# 文档漂移 8 项检查（两参签名 <文档根> <代码根>，与 size 的参数顺序相反）
+drift:
+	bash Scripts/CheckDocDrift.sh ../Doc .
+
+# GitHub 发布文件齐备性（Contract/18 的 A 级 + B 级 + 署名 + 工具脚本）
+repo-files:
+	bash Scripts/CheckRepoFiles.sh .
+
+# 🔴 收尾只需这一条：编译 + 竞态测试 + 静态检查 + 覆盖率门槛 + 规模 + 漂移 + 发布文件齐备
+check: build test-race lint cover-check size drift repo-files
+	@echo ""
+	@echo "=============================================="
+	@echo " make check 全部通过"
+	@echo "=============================================="
