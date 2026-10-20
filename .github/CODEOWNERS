@@ -1,0 +1,24 @@
+# CODEOWNERS —— 自动指派审查人
+# 语法：<路径模式> <@用户或@组织/团队>
+# 后出现的规则覆盖先出现的。
+
+# 默认：所有文件
+*                       @LseKit
+
+# 代码
+/internal/              @LseKit
+/cmd/                   @LseKit
+/Scripts/               @LseKit
+
+# 契约与决策（改动需格外小心）
+/docs/Contract/         @LseKit
+/docs/Decisions/        @LseKit
+/AGENTS.md              @LseKit
+/SECURITY.md            @LseKit
+
+# CI 与仓库配置
+/.github/               @LseKit
+/go.mod                 @LseKit
+/go.sum                 @LseKit
+/Makefile               @LseKit
+/.golangci.yml          @LseKit
