@@ -1,0 +1,79 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query"],
+  "properties": {
+    "query": {
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "description": "搜索关键词。1~128 rune（汉字/emoji 各计 1），全空白等同空。"
+    },
+    "count": {
+      "type": "integer", "minimum": 1, "maximum": 50, "default": 10,
+      "description": "最多返回条数。"
+    },
+    "detail": {
+      "type": "string", "enum": ["minimal", "snippet", "summary", "content"], "default": "summary",
+      "description": "返回字段分级。token 量级：minimal ≈60/条（8 个字段），snippet ≈180/条，summary ≈1000/条（默认，query 定向摘要，通常足以支撑回答），content 不定（全文，可能很大）。"
+    },
+    "need_content": {
+      "type": "boolean", "default": false,
+      "description": "是否返回正文。detail=content 时强制为 true；传 true 时 detail 自动升为 content。"
+    },
+    "ori_question": {
+      "type": "string", "maxLength": 128,
+      "description": "用户原始问题，≤128 rune。默认不传：实测对结果几乎无影响。禁止空串（会被上游 400）。"
+    },
+    "localization": {
+      "type": "string",
+      "description": "结果地域倾向，必须是合法 IPv4 或 IPv6 地址（如 1.2.3.4）。非法 IP 会被拒绝。"
+    },
+    "site": {
+      "type": "array", "items": {"type": "string"},
+      "description": "只在白名单域名内搜索（拼为 site:a OR site:b）。每个必须是合法域名。"
+    },
+    "exclude_sites": {
+      "type": "array", "items": {"type": "string"},
+      "description": "排除的域名（拼为 -site:x）。每个必须是合法域名。"
+    },
+    "lang": {
+      "type": "array", "items": {"type": "string"},
+      "description": "ISO 语言码（如 zh、en），逗号拼接为 lang: 操作符。未知码只记 warning 不拒绝。"
+    },
+    "after": {
+      "type": "string", "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$",
+      "description": "只要该日期之后发布的内容。🔴 传裸年份 2025 会被展开为 2025-01-01，即包含整个 2025 年（上游原生 after:YYYY 语义是『晚于该年』，实测 after:2026 对 2026 年内容返回 0 条，故本工具代为展开并记入 warnings 与 query_effective）。"
+    },
+    "before": {
+      "type": "string", "pattern": "^\\d{4}(-\\d{2}-\\d{2})?$",
+      "description": "只要该日期之前发布的内容。裸年份不展开：before:2026 = 早于 2026-01-01，与直觉一致。"
+    },
+    "exact_phrase": {
+      "type": "string",
+      "description": "精确短语，拼为带引号的短语匹配。禁止含英文双引号与首尾空白（上游对语法零校验，引号会静默改变整个查询意图），违反会被拒绝。"
+    },
+    "exclude_terms": {
+      "type": "array", "items": {"type": "string"},
+      "description": "排除的词或短语。每项禁止含英文双引号，理由同 exact_phrase。"
+    },
+    "min_rerank": {
+      "type": "number", "minimum": 0, "maximum": 3,
+      "description": "本地过滤：只保留 rerank_score ≥ 该值的结果。不传 = 关闭过滤；不要用 0 表示关闭（0 是合法阈值）。🔴 1.5 只是热门 query 的优质线：冷门/专业/小语种 query 实测 95%~100% 的正常结果低于 1.5（最低 0.196），传 1.5 可能返回 0 条。不确定时不要传。"
+    },
+    "min_authority": {
+      "type": "integer", "minimum": 0, "maximum": 4,
+      "description": "本地过滤：只保留 authority ≥ 该值的结果。不传 = 关闭过滤；不要用 0 表示关闭（实测冷门 query 里 authority=1 占 19/20）。authority < 0（上游用 -1 表示未知）不参与过滤。"
+    },
+    "max_per_domain": {
+      "type": "integer", "minimum": 1, "maximum": 10, "default": 3,
+      "description": "同一域名最多保留几条（本地域名配额）。"
+    },
+    "raw_query": {
+      "type": "boolean", "default": false,
+      "description": "true 时完全绕过语法拼装，query 原样发给上游（自行负责 site:/after: 等操作符语法）。"
+    },
+    "synthesize": {
+      "type": "boolean", "default": false,
+      "description": "本版本不支持，传 true 会返回 1095。"
+    }
+  }
+}
