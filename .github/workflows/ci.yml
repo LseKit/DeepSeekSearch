@@ -1,0 +1,245 @@
+# 主 CI：6 个**核心** job（顺序按「便宜的在前」）+ 3 个平台/漏洞 job。
+#   核心：格式 → 静态检查 → 规模 → 测试 → 覆盖率 → 文档漂移与发布文件
+#   附加：cross-build（跨平台编译矩阵）/ vuln（govulncheck）/ win-smoke（Windows 冒烟）
+# 全部 job 只读权限：这个 workflow 不需要写仓库。
+# 🔴 本文件 MUST 可被 release.yml 用 workflow_call 调用（发布前强制重跑一遍 CI），
+#    所以下面的 on: 里有 workflow_call。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:            # 供 release.yml 的 `needs: ci` 调用
+
+# 同一分支新提交取消旧跑，省额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 🔴 MUST pin **完整补丁版本**（`1.27.2`），MUST NOT 写 `1.27`。
+  #    写 `1.27` 时 setup-go 每次解析到当时的最新补丁 ⇒ 同一个 commit 在不同时间
+  #    构建出的二进制 `--version` 里 go 段不同（1.27.2 / 1.27.3 …），发布产物不可复现。
+  #    当前取值依据：NUC（部署目标）为 go1.27.2，三台机器里最新；升补丁版本 = 一次显式提交。
+  GO_VERSION: "1.27.2"
+  # 🔴 工具版本 MUST pin 到**具体版本号**，MUST NOT 用浮动版本。三重后果：
+  #    ① Scorecard 的 Pinned-Dependencies 大面积扣分，本任务 §8 那句「Supply-Chain
+  #       都能拿到分」就不成立；
+  #    ② golangci-lint 的 latest 将来出 v3 时，v2 的配置格式会**直接红 CI**
+  #       （Task-13 的 CONTRIBUTING 自己就警告过「v1 配置格式已废弃」这类事故）；
+  #    ③ 同一个 commit 两次 CI 结果可能不一致 ⇒ 无法复现。
+  #    🔴 **但版本号不再写在这里** —— 四个 Go 工具（gofumpt / golangci-lint / gocyclo /
+  #    govulncheck）已改为 `go.mod` 的 `tool` 指令管理（见 Task-01 A-01 §3 第 2.1 条），
+  #    step 里用 `go tool <name>` 调用，版本由 go.mod 的 require 行决定。
+  #    **为什么改**：`go install pkg@version` 的版本号 dependabot **管不到**（它只看
+  #    go.mod / package.json 这类清单文件），原设计等于承诺「按月人工跟进四个版本号」——
+  #    那正是最容易烂掉的维护项。改成 tool 指令后 dependabot 的 `gomod` ecosystem
+  #    自动开 PR 跟进，且 `go.sum` 里有哈希 ⇒ 供应链可验证，Scorecard 的
+  #    Pinned-Dependencies 也满意（go.sum 锁定等价于 digest pin）。
+  #    ⚠️ 落地时 MUST 先 `go get -tool mvdan.cc/gofumpt@v0.12.0`（其余三个同理）
+  #    写入 go.mod，MUST NOT 手写 tool 块而不同步 require/go.sum。
+  # 🔴 第三方 action MUST pin 到 **40 位 commit digest**（tag 引用不算 pin）。
+  #    本文件的 digest 由 .github/dependabot.yml 的 github-actions ecosystem 跟进更新；
+  #    新增 action MUST 现取 digest（方法见 Task-14 §5.11），MUST NOT 抄别处的串。
+
+jobs:
+  fmt:
+    name: 格式（gofumpt）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      # 🔴 不再 `go install ...@版本`：工具由 go.mod 的 tool 指令锁定，用 `go tool` 调用。
+      #    版本跟进交给 dependabot（gomod ecosystem），不再靠人工按月改 env。
+      - name: 下载工具链
+        run: go mod download
+      - name: 检查格式
+        run: |
+          out="$(go tool gofumpt -l .)"
+          if [ -n "$out" ]; then
+            echo "以下文件未格式化，请跑 gofumpt -w .："
+            echo "$out"
+            exit 1
+          fi
+          echo "格式检查通过"
+
+  lint:
+    name: 静态检查（golangci-lint）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: 下载工具链
+        run: go mod download
+      - run: go tool golangci-lint run ./...
+
+  size:
+    name: 规模红线（F-S1/F-S3/F-S5）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: 下载工具链
+        run: go mod download
+      # 🔴 两参签名：CheckSize.sh <代码根> <文档根>。CI 里文档根是 docs（同步产物），
+      #    不是 Doc。只传一个参数时文档根退化成默认的 Doc ⇒ 豁免台账加载不到 ⇒
+      #    已登记的 internal/domain/errors.go（720 行）会直接触发 F-S1 FAIL，job 恒红。
+      # 🔴 CheckSize.sh 内部调 gocyclo 判 F-S3；改用 go tool 后，脚本 MUST 用
+      #    `go tool gocyclo` 或依赖 PATH 里有 gocyclo。裁决：脚本里写成
+      #    `GOCYCLO="${GOCYCLO:-gocyclo}"`，CI 这个 step 传 `GOCYCLO="go tool gocyclo"`，
+      #    本地开发装了二进制时走默认值 —— 两边都不硬编码。
+      - run: GOCYCLO="go tool gocyclo" bash Scripts/CheckSize.sh . docs
+
+  test:
+    name: 测试（-race）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go build ./...
+      - run: go test -race -count=1 ./...
+
+  cover:
+    name: 覆盖率门槛
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: 总覆盖率 ≥ 65%
+        run: |
+          go test -count=1 -covermode=atomic -coverprofile=coverage.out ./...
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3,1,length($3)-1)}')"
+          echo "总覆盖率: ${total}%"
+          awk -v t="$total" 'BEGIN { if (t+0 < 65) { printf "覆盖率不足：%.1f%% < 65%%\n", t; exit 1 } }'
+      # 🔴 逐包门槛。原来只查 domain/config/resilience 三个 80%，而 Task-08 与 Task-09
+      #    都承诺 internal/tools ≥70% ⇒ 承诺没有牙齿（21-测试规范 §三 也是这个口径）。
+      #    阈值写在循环的第二个字段里，加一个包就加一行，MUST NOT 只改文档不改这里。
+      - name: 逐包覆盖率门槛
+        run: |
+          set -euo pipefail
+          for entry in "internal/domain:80" "internal/config:80" "internal/resilience:80" "internal/tools:70"; do
+            pkg="${entry%%:*}"; want="${entry##*:}"
+            go test -count=1 -covermode=atomic -coverprofile="/tmp/$(basename "$pkg").out" "./$pkg/"
+            v="$(go tool cover -func="/tmp/$(basename "$pkg").out" | awk '/^total:/ {print substr($3,1,length($3)-1)}')"
+            echo "$pkg: ${v}% (门槛 ${want}%)"
+            awk -v t="$v" -v w="$want" -v p="$pkg" \
+              'BEGIN { if (t+0 < w+0) { printf "%s 覆盖率不足：%.1f%% < %s%%\n", p, t, w; exit 1 } }'
+          done
+      # ⚠️ 逐包阈值判定 MUST 最终收敛到 `make cover-check`（归 Task-01 交付）。
+      #    `make cover` 只跑 `go tool cover -func | tail -1` 打印总行，**无法**据此判定
+      #    逐包门槛 —— 这正是 Contract/17-版本与发布契约 §七 第 10 项点名的问题。
+
+  drift:
+    name: 文档漂移与发布文件
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      # CI 里只有 docs/（同步产物），没有 Doc/。所以把 docs 当文档根，代码根为 .
+      # 🔴 两参签名：CheckDocDrift.sh <文档根> <代码根>（Engineering/22-架构守护规则 §五）
+      - run: bash Scripts/CheckDocDrift.sh docs .
+      # 🔴 C13 新增：这两个脚本都是秒级，此前只在发版那一刻跑 ⇒
+      #    AGENTS.md 漂移、docs/ 忘同步、A/B 级文件被误删，全都要等到打 tag 才暴露。
+      - run: bash Scripts/CheckRepoFiles.sh .
+      # CI 语境没有 Doc/，脚本会明确打印 [SKIP] 并退化为「docs/ 存在且非空」（真检查，
+      # 能抓住「忘了提交 docs/」）；真正的比对由 Release.sh 第 18 项在发版机执行。
+      - run: bash Scripts/SyncDocs.sh --check ../Doc .
+
+  cross-build:
+    name: 跨平台编译矩阵
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      # 🔴 很便宜（只编译，不跑测试），但能提前几周发现「某平台编不过」。
+      #    不加它，darwin/windows 产物要到 release 那一刻才**第一次**交叉编译。
+      - name: 交叉编译
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" \
+            go build -trimpath -o "/tmp/dss-${{ matrix.goos }}-${{ matrix.goarch }}" ./cmd/deepseeksearch
+          ls -l "/tmp/dss-${{ matrix.goos }}-${{ matrix.goarch }}"
+
+  vuln:
+    name: 已知漏洞（govulncheck）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: 下载工具链
+        run: go mod download
+      # 🔴 SECURITY.md 把「go.sum 里某个依赖的已知 CVE 影响本项目」列为**受理**的安全问题，
+      #    而 CI 此前没有任何漏洞扫描 ⇒ 承诺没有牙齿。source 模式不需要先构建。
+      - run: go tool govulncheck -mode=source ./...
+
+  win-smoke:
+    name: Windows 冒烟（守 time/tzdata）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: 编译 windows/amd64
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = "0"
+          go build -trimpath -o dss.exe ./cmd/deepseeksearch
+      - name: --version（不读配置，Contract/17 §3.1 V3）
+        shell: pwsh
+        run: |
+          ./dss.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version 退出码 $LASTEXITCODE" }
+      - name: -check（🔴 验证 import _ "time/tzdata" 真的生效）
+        shell: pwsh
+        run: |
+          # Windows runner **没有系统 IANA tzdata**。若 cmd 包漏了 import _ "time/tzdata"，
+          # 装配第 3 步 time.LoadLocation("Asia/Shanghai") 会失败并 exit 1
+          # （Contract/11-接口契约 §七、Contract/10-包依赖矩阵 §2.9 的 P0 条目）。
+          # --version 在第 2 步就返回，**测不到** tzdata，所以 MUST 走到 -check。
+          # 用假 Key：-check 不发起任何上游请求（不计费），但启动检查第 3 条要求 Key 非空。
+          # -env 指向仓库内的空 .env：默认 Config/.env 在 CI checkout 里不存在，
+          # applyDotEnv 会以 3040 拒绝启动（那是生产语义，不能为 CI 放宽）。
+          $env:DEEPSEEK_API_KEY = "sk-ci-smoke-not-a-real-key"
+          New-Item -ItemType Directory -Force Config | Out-Null
+          Set-Content -Path Config/.env -Value ""
+          $out = ./dss.exe -check -config config.example.toml -env Config/.env 2>&1 | Out-String
+          Write-Output $out
+          if ($out -match "tzdata|unknown time zone|Asia/Shanghai") {
+            throw "tzdata 未编进二进制：Windows 上 LoadLocation 失败"
+          }
+          if ($LASTEXITCODE -ne 0) { throw "-check 退出码 $LASTEXITCODE" }

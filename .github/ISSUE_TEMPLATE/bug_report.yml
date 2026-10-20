@@ -1,0 +1,84 @@
+name: Bug 报告
+description: 报告一个可复现的错误
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告。开 issue 前请先确认：
+        1. 已读 [已知限制](https://github.com/LseKit/DeepSeekSearch#已知限制)
+        2. 已跑过 `DeepSeekSearch --version` 与 `-check`
+        3. 日志里的 API Key 已替换成 `sk-***`
+
+  - type: textarea
+    id: version
+    attributes:
+      label: 版本与平台
+      description: 贴 `DeepSeekSearch --version` 的完整输出
+      placeholder: |
+        DeepSeekSearch v0.1.0 (commit a1b2c3d, built 2026-10-20T13:05:12Z, go1.27.1)
+        OS: Ubuntu 24.04 x86_64
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: 传输方式
+      options:
+        - stdio
+        - streamable-http
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: 涉及哪个工具
+      options:
+        - ds_search
+        - ds_fetch
+        - ds_health
+        - 服务启动 / 配置
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 越最小越好。能贴 curl 或工具调用的原始入参最好
+      placeholder: |
+        1. 配置 xxx
+        2. 调用 ds_fetch，url=...
+        3. 观察到的现象
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志或错误体
+      description: 工具返回的 JSON 错误体最有用（含 code / name / request_id）
+      render: json
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认
+      options:
+        - label: 我已把日志中的 API Key 替换成 `sk-***`
+          required: true
+        - label: 这不是安全问题（安全问题请走 SECURITY.md 私密上报）
+          required: true

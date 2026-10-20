@@ -1,0 +1,12 @@
+# 关闭空白 issue —— 强制走模板，otherwise 一半 issue 缺少版本与复现步骤
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞（不要开 issue）
+    url: https://github.com/LseKit/DeepSeekSearch/security/advisories/new
+    about: 请走私密上报，公开 issue 会直接关闭
+  - name: 使用与配置问题
+    url: https://github.com/LseKit/DeepSeekSearch/blob/main/docs/Contract/13-配置契约.md
+    about: 配置每一项的含义、默认值、选了会怎样
+  - name: 部署与故障排查
+    url: https://github.com/LseKit/DeepSeekSearch/blob/main/docs/Ops/30-部署运维手册.md
+    about: systemd、反向代理、症状 → grep → 结论

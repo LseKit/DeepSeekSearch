@@ -1,0 +1,50 @@
+# OpenSSF Scorecard：供应链安全体检。
+# 结果会发布到 scorecard.dev 的公开页面（需要仓库是 public）。
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: "41 4 * * 2"   # 每周二 04:41 UTC
+  push:
+    branches: [main]
+
+# 🔴 顶层 MUST 是 `{}`（deny-all）而不是 `read-all`。
+#    Scorecard 的 Token-Permissions 检查按**顶层**判定：只要顶层写了 read-all，
+#    下面 job 级的最小权限再严也会被判 high risk，得分直接扣掉。
+#    也不能整行删掉 —— 删掉后生效的是仓库默认（老仓库常是 write-all），比 read-all 更糟。
+#    `{}` = 默认一个令牌都不给，需要哪个由 job 自己声明。
+permissions: {}
+
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write          # 上传 SARIF
+      id-token: write                 # 用于签名发布结果
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+          # 🔴 MUST 使用 full clone（官方模板要求，见下方 checkout 配置）。
+          #    默认的 depth=1 会让 Fuzzing、活跃贡献者数、 commit 频率等检查失效 ⇒ 得分偏低，
+          #    而且偏低的原因在 SARIF 里看不出来，只会以为「项目供应链差」。
+          fetch-depth: 0
+
+      - uses: ossf/scorecard-action@62b2cac7ed8198b15735ed49ab1e5cf35480ba46  # v2.4.0
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+
+      - uses: github/codeql-action/upload-sarif@ce5e7eeac396d720fe2d802714996c8ce561e311  # v3
+        with:
+          sarif_file: results.sarif

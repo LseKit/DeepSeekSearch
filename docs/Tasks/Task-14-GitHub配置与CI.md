@@ -127,7 +127,8 @@ python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('.gith
 grep -rn '@latest' .github/workflows/ | wc -l                   # → 0
 
 # 14 🔴 全部 uses: 都 pin 到 40 位 digest（两个数字 MUST 相等）
-grep -rhoE 'uses: [^ ]+' .github/workflows/ | wc -l                       # → N（uses 总数）
+# 🔴 本地复用 workflow（uses: ./.github/workflows/ci.yml）不是第三方 action，不参与 digest pin
+grep -rhoE 'uses: [^ ]+' .github/workflows/ | grep -v 'uses: \./' | wc -l    # → N（远程 uses 总数）
 grep -rhoE 'uses: [A-Za-z0-9._/-]+@[0-9a-f]{40}' .github/workflows/ | wc -l   # → 同一个 N
 
 # 15 🔴 占位符零残留（提交前 MUST 全部替换掉）
@@ -705,7 +706,10 @@ jobs:
           # --version 在第 2 步就返回，**测不到** tzdata，所以 MUST 走到 -check。
           # 用假 Key：-check 不发起任何上游请求（不计费），但启动检查第 3 条要求 Key 非空。
           $env:DEEPSEEK_API_KEY = "sk-ci-smoke-not-a-real-key"
-          $out = ./dss.exe -check -config config.example.toml 2>&1 | Out-String
+          # 默认 Config/.env 在 CI checkout 里不存在；applyDotEnv 会以 3040 拒绝启动
+          New-Item -ItemType Directory -Force Config | Out-Null
+          Set-Content -Path Config/.env -Value ""
+          $out = ./dss.exe -check -config config.example.toml -env Config/.env 2>&1 | Out-String
           Write-Output $out
           if ($out -match "tzdata|unknown time zone|Asia/Shanghai") {
             throw "tzdata 未编进二进制：Windows 上 LoadLocation 失败"
@@ -876,7 +880,7 @@ jobs:
           queries: security-and-quality
       - uses: actions/setup-go@PIN_DIGEST_v5
         with:
-          go-version: "1.27"
+          go-version: "1.27.2"
           cache: true
       - uses: github/codeql-action/autobuild@PIN_DIGEST_v3
       - uses: github/codeql-action/analyze@PIN_DIGEST_v3
@@ -1191,7 +1195,7 @@ have A "CODE_OF_CONDUCT.md" 'grep -q "Contributor Covenant" CODE_OF_CONDUCT.md'
 have A ".gitignore"       'grep -q "Config/.env" .gitignore'
 have A "go.mod"           'grep -q "^module github.com/LseKit/DeepSeekSearch$" go.mod'
 have A "Makefile"         'grep -qE "^VERSION[[:space:]]*:=" Makefile'
-have A "config.example.toml" '! grep -q "sk-" config.example.toml'
+have A "config.example.toml" '! grep -qE "(^|[^A-Za-z0-9])sk-[A-Za-z0-9]" config.example.toml'
 have A "go.sum"
 
 echo ""

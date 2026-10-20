@@ -1,0 +1,36 @@
+# 依赖自动更新。两个 ecosystem 缺一不可：
+#   - gomod：go.mod 里的 Go 依赖
+#   - github-actions：workflow 里用到的 Action 版本
+# 只开周更、限制并发 PR 数，避免刷屏把有用的 PR 埋掉。
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # 同一个生态的小版本合并成一个 PR，减少噪音
+      go-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns: ["*"]

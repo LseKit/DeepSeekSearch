@@ -1,0 +1,35 @@
+# 代码安全扫描。Go 用 CodeQL 的 go 语言包（编译型，会真的 build 一次）。
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "23 3 * * 1"   # 每周一 03:23 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # 上传 SARIF 结果必需
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: github/codeql-action/init@ce5e7eeac396d720fe2d802714996c8ce561e311  # v3
+        with:
+          languages: go
+          queries: security-and-quality
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+        with:
+          go-version: "1.27.2"
+          cache: true
+      - uses: github/codeql-action/autobuild@ce5e7eeac396d720fe2d802714996c8ce561e311  # v3
+      - uses: github/codeql-action/analyze@ce5e7eeac396d720fe2d802714996c8ce561e311  # v3
+        with:
+          category: "/language:go"

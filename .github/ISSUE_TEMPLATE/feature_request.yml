@@ -1,0 +1,51 @@
+name: 功能需求
+description: 提出一个新功能或改进
+title: "[feat] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提需求前请先查两处，能省一轮来回：
+        - [明确不做的功能](https://github.com/LseKit/DeepSeekSearch/blob/main/docs/Decisions/16-技术债登记表.md) §四
+        - [已排期到阶段二的功能](https://github.com/LseKit/DeepSeekSearch/blob/main/docs/Decisions/16-技术债登记表.md) §二
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的实际问题
+      description: 描述场景，不要直接描述方案
+      placeholder: 我在让 agent 做多页资料汇总，需要连着抓 5 个 URL，现在要调 5 次 ds_fetch
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望的方案
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: 你认为这属于哪个阶段
+      options:
+        - 阶段一（当前版本必须有）
+        - 阶段二（可以等）
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: debt
+    attributes:
+      label: 如果对应已知技术债，填编号
+      placeholder: DEBT-002
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你考虑过的替代方案
+    validations:
+      required: false
