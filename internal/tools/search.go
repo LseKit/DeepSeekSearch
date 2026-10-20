@@ -11,8 +11,6 @@ import (
 	"encoding/json"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
 // searchDescription 只放「模型不知道就会做错」的规则。
@@ -121,7 +119,7 @@ func (t *searchTool) Name() string { return "ds_search" }
 // Register 把 ds_search 的 schema、annotations 与 handler 注册到 server。
 func (t *searchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
 	srv.AddTool(searchToolDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return handleSearchNotImplemented(ctx, &deps, req), nil
+		return handleSearch(ctx, &deps, req), nil
 	})
 }
 
@@ -159,9 +157,4 @@ type searchInput struct {
 	MaxPerDomain *int     `json:"max_per_domain"`
 	RawQuery     *bool    `json:"raw_query"`
 	Synthesize   *bool    `json:"synthesize"`
-}
-
-func handleSearchNotImplemented(_ context.Context, _ *Deps, _ *mcp.CallToolRequest) *mcp.CallToolResult {
-	err := domain.NewLocalError(domain.CodeLocInternal, "ds_search handler 尚未实装", nil)
-	return errorResult(err, "ds_search")
 }
