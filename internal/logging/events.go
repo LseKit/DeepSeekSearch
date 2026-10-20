@@ -1,5 +1,5 @@
 // 文件名: events.go
-// 用途: 定义全部 26 个日志事件名常量，是全项目事件名的唯一真源。
+// 用途: 定义全部 27 个日志事件名常量，是全项目事件名的唯一真源。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -27,14 +27,15 @@ const (
 	EvCallSection      = "call.section"
 	EvCallEnd          = "call.end"
 
-	EvErr                = "err"
-	EvWarnSlow           = "warn.slow"
-	EvWarnBudget         = "warn.budget"
-	EvWarnCacheDegraded  = "warn.cache_degraded"
-	EvWarnCacheOversize  = "warn.cache_oversize"
-	EvInfoCacheRecovered = "info.cache_recovered"
-	EvWarnLogQuota       = "warn.log_quota"
-	EvSSRFBlocked        = "ssrf.blocked"
-	EvCachePrune         = "cache.prune"
-	EvLogRotate          = "log.rotate"
+	EvErr                   = "err"
+	EvWarnSlow              = "warn.slow"
+	EvWarnBudget            = "warn.budget"
+	EvWarnCacheDegraded     = "warn.cache_degraded"
+	EvWarnCacheOversize     = "warn.cache_oversize"
+	EvWarnCacheCommitFailed = "warn.cache_commit_failed"
+	EvInfoCacheRecovered    = "info.cache_recovered"
+	EvWarnLogQuota          = "warn.log_quota"
+	EvSSRFBlocked           = "ssrf.blocked"
+	EvCachePrune            = "cache.prune"
+	EvLogRotate             = "log.rotate"
 )

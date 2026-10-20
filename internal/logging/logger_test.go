@@ -1,5 +1,5 @@
 // 文件名: logger_test.go
-// 用途: 验证 slog 构建、配置指纹、26 个事件常量与事件必带字段、行内时间格式与 stdout 零输出。
+// 用途: 验证 slog 构建、配置指纹、27 个事件常量与事件必带字段、行内时间格式与 stdout 零输出。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -30,7 +30,8 @@ var allEventNames = []string{
 	EvCallBegin, EvCallCache, EvCallLimitWait, EvCallUpstream, EvCallUpstreamDone,
 	EvCallRetry, EvCallCircuit, EvCallDedupe, EvCallSection, EvCallEnd,
 	EvErr, EvWarnSlow, EvWarnBudget, EvWarnCacheDegraded, EvWarnCacheOversize,
-	EvInfoCacheRecovered, EvWarnLogQuota, EvSSRFBlocked, EvCachePrune, EvLogRotate,
+	EvWarnCacheCommitFailed, EvInfoCacheRecovered, EvWarnLogQuota, EvSSRFBlocked,
+	EvCachePrune, EvLogRotate,
 }
 
 func TestNew(t *testing.T) {
@@ -155,8 +156,8 @@ func TestConfigSha256(t *testing.T) {
 func TestEventConstants(t *testing.T) {
 	t.Parallel()
 
-	if len(allEventNames) != 26 {
-		t.Fatalf("事件数量 = %d, want 26", len(allEventNames))
+	if len(allEventNames) != 27 {
+		t.Fatalf("事件数量 = %d, want 27", len(allEventNames))
 	}
 	seen := make(map[string]bool, len(allEventNames))
 	for _, name := range allEventNames {
@@ -218,6 +219,7 @@ func TestEventRequiredFields(t *testing.T) {
 		{name: "warn.cache_degraded", event: EvWarnCacheDegraded, level: slog.LevelWarn},
 		{name: "warn.cache_oversize", event: EvWarnCacheOversize, extra: []string{"key_hash", "bytes", "limit_kb"}, level: slog.LevelWarn},
 		{name: "info.cache_recovered", event: EvInfoCacheRecovered},
+		{name: "warn.cache_commit_failed", event: EvWarnCacheCommitFailed, extra: []string{"key_hash", "err"}, level: slog.LevelWarn},
 		{name: "warn.log_quota", event: EvWarnLogQuota, extra: []string{"dropped_lines"}, level: slog.LevelWarn},
 		{name: "ssrf.blocked", event: EvSSRFBlocked, callID: true, extra: []string{"url"}},
 		{name: "cache.prune", event: EvCachePrune},
@@ -346,6 +348,8 @@ func eventArgs(tc eventCase) []any {
 			args = append(args, key, 2097153)
 		case "limit_kb":
 			args = append(args, key, 2048)
+		case "err":
+			args = append(args, key, "disk full")
 		}
 	}
 	return args

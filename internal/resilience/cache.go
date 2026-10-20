@@ -1,5 +1,5 @@
 // 文件名: cache.go
-// 用途: 定义持久化缓存接口、缓存 key 归一化，以及命中统计与容量淘汰的簿记逻辑。
+// 用途: 定义持久化缓存接口、缓存 key 归一化、singleflight 共享的 oversize 编解码与簿记逻辑。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -20,10 +21,11 @@ import (
 const (
 	cacheSchemaVersion = "v1"
 
-	evtCacheOversize  = "warn.cache_oversize"
-	evtCacheDegraded  = "warn.cache_degraded"
-	evtCacheRecovered = "info.cache_recovered"
-	evtCachePrune     = "cache.prune"
+	evtCacheOversize     = "warn.cache_oversize"
+	evtCacheDegraded     = "warn.cache_degraded"
+	evtCacheRecovered    = "info.cache_recovered"
+	evtCacheCommitFailed = "warn.cache_commit_failed"
+	evtCachePrune        = "cache.prune"
 )
 
 // Cache 是持久化键值缓存。阶段一唯一实现是 SQLite 版本，理由见 ADR-006。
@@ -278,4 +280,29 @@ func containsKey(keys []string, key string) bool {
 		}
 	}
 	return false
+}
+
+type oversizeMarker struct {
+	Kind     string `json:"__ds_sf"`
+	Oversize bool   `json:"oversize"`
+	Bytes    int    `json:"bytes"`
+}
+
+func detachedContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached := context.WithoutCancel(ctx)
+	if deadline, ok := ctx.Deadline(); ok {
+		return context.WithDeadline(detached, deadline)
+	}
+	return context.WithCancel(detached)
+}
+
+func decodeOversize(val []byte) (int, bool) {
+	var marker oversizeMarker
+	if err := json.Unmarshal(val, &marker); err != nil {
+		return 0, false
+	}
+	if marker.Kind != oversizeMarkerKind || !marker.Oversize {
+		return 0, false
+	}
+	return marker.Bytes, true
 }

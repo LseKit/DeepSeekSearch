@@ -36,6 +36,9 @@ type Config struct {
 	CachePruneIntervalS int
 	Clock               Clock
 	Logger              cacheLogger
+
+	TotalTimeoutSearchMs int
+	TotalTimeoutFetchMs  int
 }
 
 // cacheLogger 是注入给缓存层的窄日志接口。
