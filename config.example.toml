@@ -642,12 +642,11 @@ also_stderr = true
 # 用来在不打开 debug 的情况下发现长尾。
 slow_ms = 3000
 
-# 是否记录请求/响应报文（KB）。
-#   0（默认）—— 绝不记。
-#   > 0      —— 记录截断到这么多 KB 的报文内容。仅排查时临时开。
-# 🔴 为什么默认 0：实测一次 count=50 + need_content 的响应是 636KB，
-# 记进日志会迅速撑爆磁盘。
-max_body_log_kb = 0
+# 🔴 这里曾有一个 `max_body_log_kb`，已整键移除：它没有任何读取点。
+#   要在「一次调用」的日志里记原始报文，必须能带上该次调用的 `call_id`；
+#   而 deepseek 包按依赖矩阵禁止 import logging，全局回调又拿不到 call_id。
+#   正确的做法是给 deepseek 加「ctx 感知的报文回调」并在 Tools 里关联 call_id ——
+#   这是一项跨层改动，已登记为 DEBT-009（阶段二），阶段一 MUST NOT 造一个假开关。
 
 # 日志里要对 URL query 中这些键的值打码（防止 token 泄漏到日志）。
 redact_query_keys = ["token", "key", "secret", "password", "code", "sig", "auth"]

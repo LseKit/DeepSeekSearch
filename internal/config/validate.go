@@ -404,10 +404,6 @@ func (c *Config) validateLog() []error {
 	if c.Log.SlowMs < 0 {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid, "log.slow_ms 必须 ≥0，实际 %d", c.Log.SlowMs))
 	}
-	if c.Log.MaxBodyLogKb < 0 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"log.max_body_log_kb 必须 ≥0，实际 %d", c.Log.MaxBodyLogKb))
-	}
 	if c.Log.Timezone == "" {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid, "log.timezone 不能为空"))
 	} else if _, err := time.LoadLocation(c.Log.Timezone); err != nil {

@@ -230,7 +230,6 @@ type LogConfig struct {
 	Compress        bool     `toml:"compress"`
 	AlsoStderr      bool     `toml:"also_stderr"`
 	SlowMs          int      `toml:"slow_ms"`
-	MaxBodyLogKb    int      `toml:"max_body_log_kb"`
 	RedactQueryKeys []string `toml:"redact_query_keys"`
 }
 
@@ -431,7 +430,6 @@ func defaultLog() LogConfig {
 		Compress:        true,
 		AlsoStderr:      true,
 		SlowMs:          3000,
-		MaxBodyLogKb:    0,
 		RedactQueryKeys: []string{"token", "key", "secret", "password", "code", "sig", "auth"},
 	}
 }
