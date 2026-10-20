@@ -182,6 +182,12 @@ func (h *fetchHandler) upstream(ctx context.Context, rawURL string) (domain.Fetc
 			h.recordCircuit(nil)
 			return resp, nil
 		}
+		// 同 search：ctx 是 fn 实际收到的 context，避免与上层 totalCtx 的 timer 竞争
+		// 把总预算到期误判成单次尝试超时（2998）。
+		if ctx.Err() != nil {
+			h.recordCircuit(err)
+			return domain.FetchResponse{}, h.totalTimeoutError()
+		}
 		lastErr = err
 		retry, reason := h.shouldRetry(err, attempt)
 		if reason == resilience.ReasonBudgetExhausted {

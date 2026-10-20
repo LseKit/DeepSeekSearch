@@ -168,6 +168,13 @@ func (h *searchHandler) upstream(ctx context.Context, req *domain.SearchRequest)
 			h.recordCircuit(nil)
 			return resp, nil
 		}
+		// ctx 是 fn 实际收到的那个 context：singleflight 会为 owner 另建一个同截止时间的
+		// context，两个 timer 的触发有微秒级先后差。若只在上层看 totalCtx.Err()，
+		// 会偶发把「总预算到期」误判成「单次尝试超时」(2998)。这里判断最确定。
+		if ctx.Err() != nil {
+			h.recordCircuit(err)
+			return domain.SearchResponse{}, h.totalTimeoutError()
+		}
 		lastErr = err
 		retry, reason := h.shouldRetry(err, attempt)
 		if reason == resilience.ReasonBudgetExhausted {
