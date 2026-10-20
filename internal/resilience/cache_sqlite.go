@@ -141,6 +141,12 @@ func withCacheDefaults(cfg *Config) {
 	if cfg.CachePruneIntervalS <= 0 {
 		cfg.CachePruneIntervalS = 300
 	}
+	if cfg.TotalTimeoutSearchMs <= 0 {
+		cfg.TotalTimeoutSearchMs = 67000
+	}
+	if cfg.TotalTimeoutFetchMs <= 0 {
+		cfg.TotalTimeoutFetchMs = 110000
+	}
 }
 
 func ensureCacheDir(path string) error {
