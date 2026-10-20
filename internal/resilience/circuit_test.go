@@ -244,3 +244,28 @@ func newTestCircuit(clk Clock, mutate func(*Config)) Circuit {
 	}
 	return NewCircuit(cfg, clk)
 }
+
+func TestCircuitDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	clk := newFakeClock(limiterNow)
+	c := newTestCircuit(clk, nil)
+	failErr := domain.NewUpstreamError(500, "", "", nil)
+	for range 5 {
+		c.Record("search", failErr)
+	}
+	breaker, ok := c.(*circuit)
+	if !ok {
+		t.Fatalf("熔断器类型 = %T", c)
+	}
+	diag := breaker.Diagnostics("search")
+	if diag.State != stateOpen || diag.Failures != 5 || diag.Threshold != 5 {
+		t.Fatalf("Diagnostics = %+v", diag)
+	}
+	if diag.RetryAfterMs <= 0 {
+		t.Fatalf("RetryAfterMs = %d, want > 0", diag.RetryAfterMs)
+	}
+	if closed := breaker.Diagnostics("fetch"); closed.State != stateClosed {
+		t.Fatalf("未失败 key State = %q", closed.State)
+	}
+}

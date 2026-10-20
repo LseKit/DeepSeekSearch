@@ -452,3 +452,42 @@ func mustPut(t *testing.T, c *sqliteCache, key, val string) {
 		t.Fatalf("Put(%s) = %v", key, err)
 	}
 }
+
+func TestCheckWritable(t *testing.T) {
+	t.Parallel()
+
+	blocker := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("WriteFile() = %v", err)
+	}
+	c := &sqliteCache{cfg: Config{CacheDbPath: filepath.Join(blocker, "Cache.db")}}
+	if err := c.CheckWritable(); err == nil {
+		t.Fatal("目录不可写时应返回 error")
+	}
+
+	cache, err := NewSqliteCache(Config{
+		CacheDbPath:         filepath.Join(t.TempDir(), "Data", "Cache.db"),
+		CacheMaxEntries:     10,
+		CacheMaxBytesMB:     1,
+		CacheMaxEntryKB:     16,
+		CachePruneIntervalS: 300,
+	})
+	if err != nil {
+		t.Fatalf("NewSqliteCache() = %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := cache.Close(); closeErr != nil {
+			t.Errorf("Close() = %v", closeErr)
+		}
+	})
+	sqlite, ok := cache.(*sqliteCache)
+	if !ok {
+		t.Fatalf("缓存类型 = %T", cache)
+	}
+	if err := sqlite.CheckWritable(); err != nil {
+		t.Fatalf("CheckWritable() = %v", err)
+	}
+	if err := (&sqliteCache{cfg: Config{CacheDbPath: ":memory:"}}).CheckWritable(); err != nil {
+		t.Fatalf(":memory: CheckWritable() = %v", err)
+	}
+}

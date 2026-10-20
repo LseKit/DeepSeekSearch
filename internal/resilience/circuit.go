@@ -139,6 +139,35 @@ func (c *circuit) State(key string) string {
 	return state.status
 }
 
+// CircuitDiagnostics 是健康诊断用的 per-key 熔断运行态。
+type CircuitDiagnostics struct {
+	State        string
+	Failures     int
+	Threshold    int
+	RetryAfterMs int64
+}
+
+// Diagnostics 返回指定 key 的熔断状态、连续失败数与 Open 剩余时长。
+func (c *circuit) Diagnostics(key string) CircuitDiagnostics {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	state := c.stateLocked(key)
+	now := c.clk.Now()
+	c.refreshLocked(state, now)
+	out := CircuitDiagnostics{
+		State:     state.status,
+		Failures:  state.failures,
+		Threshold: c.cfg.CircuitFailThreshold,
+	}
+	if state.status == stateOpen {
+		remaining := time.Duration(c.cfg.CircuitOpenMs)*time.Millisecond - now.Sub(state.openedAt)
+		if remaining > 0 {
+			out.RetryAfterMs = remaining.Milliseconds()
+		}
+	}
+	return out
+}
+
 func (c *circuit) stateLocked(key string) *circuitState {
 	state, ok := c.states[key]
 	if !ok {
@@ -163,7 +192,7 @@ func (c *circuit) refreshLocked(state *circuitState, now time.Time) {
 func (c *circuit) openLocked(state *circuitState, now time.Time) {
 	state.status = stateOpen
 	state.openedAt = now
-	state.failures = 0
+	// 保留失败计数：Open 期间诊断仍要看得到「是几次失败触发的」，清零会误导排查。
 	state.probes = 0
 	state.successes = 0
 }

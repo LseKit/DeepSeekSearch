@@ -240,3 +240,36 @@ func mustLimiter(t *testing.T, clk Clock, spec map[string]BucketSpec, maxInfligh
 	}
 	return l
 }
+
+func TestLimiterDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	clk := newFakeClock(limiterNow)
+	l := mustLimiter(t, clk, map[string]BucketSpec{
+		"search": {Rps: 1000, Burst: 8},
+		"fetch":  {Rps: 1000, Burst: 8},
+	}, 8, 0.5, 5*time.Second)
+	ctx := context.Background()
+	for range 4 {
+		if err := l.Wait(ctx, "search"); err != nil {
+			t.Fatalf("Wait() = %v", err)
+		}
+	}
+	lim, ok := l.(*limiter)
+	if !ok {
+		t.Fatalf("限流器类型 = %T", l)
+	}
+	diag := lim.Diagnostics("search")
+	if diag.Key != "search" || diag.Inflight != 4 || diag.Quota != 4 {
+		t.Fatalf("Diagnostics = %+v", diag)
+	}
+	if diag.Waiters != 0 {
+		t.Fatalf("Waiters = %d, want 0", diag.Waiters)
+	}
+	if diag.Stage != "inflight" {
+		t.Fatalf("Stage = %q, want inflight", diag.Stage)
+	}
+	if unknown := lim.Diagnostics("other"); unknown.Stage != "unknown" {
+		t.Fatalf("未知 key Stage = %q", unknown.Stage)
+	}
+}

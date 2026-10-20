@@ -56,8 +56,10 @@ type fakeClient struct {
 	mu         sync.Mutex
 	calls      int
 	fetchCalls int
+	pingCalls  int
 	searchFn   func(context.Context, domain.SearchRequest) (domain.SearchResponse, error)
 	fetchFn    func(context.Context, domain.FetchRequest) (domain.FetchResponse, error)
+	pingFn     func(context.Context) error
 }
 
 func (f *fakeClient) Search(ctx context.Context, req domain.SearchRequest) (domain.SearchResponse, error) { //nolint:gocritic // 实现 deepseek.Client 固定签名
@@ -82,7 +84,16 @@ func (f *fakeClient) Fetch(ctx context.Context, req domain.FetchRequest) (domain
 	return fn(ctx, req)
 }
 
-func (f *fakeClient) Ping(context.Context) error { return errors.New("ping not implemented in fake") }
+func (f *fakeClient) Ping(ctx context.Context) error {
+	f.mu.Lock()
+	f.pingCalls++
+	fn := f.pingFn
+	f.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx)
+}
 
 func (f *fakeClient) callCount() int {
 	f.mu.Lock()
@@ -94,6 +105,12 @@ func (f *fakeClient) fetchCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.fetchCalls
+}
+
+func (f *fakeClient) pingCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pingCalls
 }
 
 type fakeLimiter struct {
@@ -131,6 +148,7 @@ func (l *fakeLimiter) counts() (waits, releases int) {
 type fakeCircuit struct {
 	mu       sync.Mutex
 	allowErr error
+	state    string
 	records  []error
 }
 
@@ -146,7 +164,14 @@ func (c *fakeCircuit) Record(_ string, err error) {
 	c.mu.Unlock()
 }
 
-func (c *fakeCircuit) State(string) string { return "closed" }
+func (c *fakeCircuit) State(string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == "" {
+		return "closed"
+	}
+	return c.state
+}
 
 func newTestDeps(t *testing.T, client *fakeClient, mutate func(*Deps)) (Deps, *syncBuffer) {
 	t.Helper()

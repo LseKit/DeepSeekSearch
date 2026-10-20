@@ -332,6 +332,34 @@ func (c *sqliteCache) Close() (err error) {
 	return err
 }
 
+// CheckWritable 在缓存目录写一个 0 字节临时文件再删除，供 ds_health 判断 Data/ 可写。
+func (c *sqliteCache) CheckWritable() error {
+	if c.cfg.CacheDbPath == ":memory:" {
+		return nil
+	}
+	dir := filepath.Dir(c.cfg.CacheDbPath)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	file, err := os.CreateTemp(dir, ".health-*")
+	if err != nil {
+		return fmt.Errorf("cache dir not writable: %w", err)
+	}
+	name := file.Name()
+	closeErr := file.Close()
+	removeErr := os.Remove(name)
+	return errors.Join(
+		wrapCheckErr("close probe file", closeErr),
+		wrapCheckErr("remove probe file", removeErr))
+}
+
+func wrapCheckErr(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", action, err)
+}
+
 func (c *sqliteCache) overCapacity() bool {
 	maxEntries := int64(c.cfg.CacheMaxEntries)
 	maxBytes := int64(c.cfg.CacheMaxBytesMB) << 20

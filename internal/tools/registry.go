@@ -9,6 +9,7 @@ package tools
 import (
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -29,6 +30,7 @@ type Deps struct {
 	Singleflight resilience.Singleflight
 	Circuit      resilience.Circuit
 	Clock        resilience.Clock
+	StartedAt    time.Time
 	Build        domain.BuildInfo
 	Logger       *slog.Logger
 }

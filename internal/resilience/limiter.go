@@ -43,6 +43,7 @@ type limiter struct {
 
 type bucket struct {
 	mu          sync.Mutex
+	rps         float64
 	burst       int
 	interval    time.Duration
 	nextFree    time.Time
@@ -104,7 +105,7 @@ func newBucket(spec BucketSpec) *bucket {
 	if interval < time.Nanosecond {
 		interval = time.Nanosecond
 	}
-	return &bucket{burst: spec.Burst, interval: interval}
+	return &bucket{rps: spec.Rps, burst: spec.Burst, interval: interval}
 }
 
 // reserve 预约一个令牌，返回需要等待的时长与归还函数。
@@ -203,6 +204,58 @@ func (l *limiter) Release(key string) {
 	select {
 	case <-sem:
 	default:
+	}
+}
+
+// LimiterDiagnostics 是健康诊断用的 per-key 限流运行态。
+// 令牌余量不是判据：瞬时 0 令牌是高负载常态，真正危险的是排队即将超时。
+type LimiterDiagnostics struct {
+	Key             string
+	RPS             float64
+	Burst           int
+	Inflight        int
+	Quota           int
+	Waiters         int
+	EstimatedWaitMs int64
+	Stage           string
+}
+
+// Diagnostics 返回指定 key 的在飞/配额/排队与预计等待。
+func (l *limiter) Diagnostics(key string) LimiterDiagnostics {
+	bucket, sem, depth, ok := l.lookup(key)
+	if !ok {
+		return LimiterDiagnostics{Key: key, Stage: "unknown"}
+	}
+	bucket.mu.Lock()
+	nextFree := bucket.nextFree
+	initialized := bucket.initialized
+	rps := bucket.rps
+	burst := bucket.burst
+	bucket.mu.Unlock()
+
+	now := l.clk.Now()
+	var wait time.Duration
+	if initialized && nextFree.After(now) {
+		wait = nextFree.Sub(now)
+	}
+	inflight := len(sem)
+	quota := cap(sem)
+	waiters := int(depth.Load())
+	stage := "none"
+	switch {
+	case wait > 0:
+		stage = "token"
+	case inflight >= quota:
+		stage = "inflight"
+	}
+	estimated := wait.Milliseconds()
+	if stage == "inflight" && waiters > 0 {
+		estimated = l.maxWait.Milliseconds()
+	}
+	return LimiterDiagnostics{
+		Key: key, RPS: rps, Burst: burst,
+		Inflight: inflight, Quota: quota, Waiters: waiters,
+		EstimatedWaitMs: estimated, Stage: stage,
 	}
 }
 
