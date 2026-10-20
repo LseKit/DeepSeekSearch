@@ -50,7 +50,7 @@
 | 5.1 | `time.LoadLocation("Asia/Shanghai")` 失败 → 打印「时区库加载失败（正常情况下不可能：已嵌入 `time/tzdata`，请检查构建是否误加了 `-tags timetzdata_exclude`）」+ `os.Exit(1)` |
 | 6 | 配置校验失败 → 打印**全部** error 与 warning（`Validate()` 返回 `(warnings []string, err error)`）+ `os.Exit(1)` |
 | 7 | 缓存打开失败且 `cache.degraded_ok=false` → `os.Exit(1)`；否则降级 + `warn.cache_degraded` |
-| 8 | 🔴 **关闭序列 MUST 严格按此顺序**（顺序错了会丢租约或写坏 SQLite）：<br>`收到 SIGINT/SIGTERM` → `cancel()` → `handler.Serve` 返回 → **`sflight.ReleaseAll(owner)`** → `cache.Close()` → `logger.Close()` → `os.Exit(0)`<br>**为什么 `ReleaseAll` 必须在 `cache.Close()` 之前**：跨进程 singleflight 的租约存在 SQLite 的 `inflight` 表里（见 `Task-07`）；`cache.Close()` 之后连接已关，租约就删不掉了，只能等 TTL 过期，期间其它进程会一直空等到 3075。<br>⚠️ 原文把「退出前 `ReleaseAll`」单独列成第 11 条、又没写进第 8 条的序列里 ⇒ 两处必然被拼错，故合并 |
+| 8 | 🔴 **关闭序列 MUST 严格按此顺序**（顺序错了会丢租约或写坏 SQLite）：<br>`收到 SIGINT/SIGTERM` → `cancel()` → `handler.Serve` 返回 → **`sflight.ReleaseAll(ctx, "")`** → `cache.Close()` → `logger.Close()` → `os.Exit(0)`<br>**为什么 `ReleaseAll` 必须在 `cache.Close()` 之前**：跨进程 singleflight 的租约存在 SQLite 的 `inflight` 表里（见 `Task-07`）；`cache.Close()` 之后连接已关，租约就删不掉了，只能等 TTL 过期，期间其它进程会一直空等到 3075。<br>🔴 **owner 传空串**：owner 由 `NewSingleflight` 内部按 `hostname:pid:startupNano` 生成，不暴露给装配层；`ReleaseAll(ctx, "")` 按本实例释放（`Contract/11-接口契约.md` §四 已写明）。原文写 `sflight.ReleaseAll(owner)` 但装配层拿不到 owner —— 复制一份生成算法必然漂移 |
 | 9 | **第二次收到 SIGINT/SIGTERM → 立即 `os.Exit(1)`**（不再走关闭序列）。关闭卡住时用户的本能是再按一次 Ctrl-C；没有这条，进程会看起来「按了没反应」 |
 | 10 | 优雅关闭超时 15s，超时强制退出（`os.Exit(1)`） |
 | 11 | 启动日志打 `app.start` 与 `app.ready`（含 `config_sha256`、监听地址、`version`） |
@@ -126,7 +126,7 @@ $ go test ./cmd/... -v
 ### 8 完成定义（DoD）
 
 - [ ] 6 个用例全绿
-- [ ] `grep -c 'os.Exit' cmd/deepseeksearch/*.go` 只在 `main()` 里 1 处
+- [ ] `os.Exit` ONLY in `cmd/deepseeksearch/main.go` 的 `main()`（含其内联的第二次信号闭包）；`run()` MUST NOT 调用 `os.Exit`。正常退出 1 处 + 第二次信号立即退出 1 处 = 文件内共 2 处，均属 main() 的职责
 - [ ] 提交：`feat(cmd): 装配与优雅关闭`
 
 ---

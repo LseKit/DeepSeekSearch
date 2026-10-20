@@ -45,6 +45,7 @@ type Singleflight interface {
 		commit func(context.Context, []byte) error) (val []byte, shared bool, err error)
 
 	// ReleaseAll 清理属于 ownerID 的全部租约。MUST 在 cache.Close 之前调用。
+	// ownerID 传空串表示本实例：owner 由 NewSingleflight 内部生成，不暴露给装配层。
 	ReleaseAll(ctx context.Context, ownerID string) (released int, err error)
 }
 
@@ -413,6 +414,9 @@ func (s *singleflight) finishCall(storageKey string, current *call) {
 func (s *singleflight) ReleaseAll(ctx context.Context, ownerID string) (int, error) {
 	if s.leases == nil {
 		return 0, nil
+	}
+	if ownerID == "" {
+		ownerID = s.owner
 	}
 	released, err := s.leases.releaseAllLeases(ctx, ownerID)
 	if err != nil {
