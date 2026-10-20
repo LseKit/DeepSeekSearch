@@ -15,14 +15,6 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
-type fetchTool struct{}
-
-func (t *fetchTool) Name() string { return "ds_fetch" }
-
-func (t *fetchTool) Register(srv *mcp.Server, _ Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
-	registerStub(srv, "ds_fetch", "DeepSeek 网页抓取")
-}
-
 type healthTool struct{}
 
 func (t *healthTool) Name() string { return "ds_health" }
