@@ -43,7 +43,7 @@ type healthzPayload struct {
 }
 
 func healthzHandler(cfg *config.Config, build domain.BuildInfo, startedAt time.Time,
-	log *slog.Logger, next http.Handler) http.Handler {
+	cache CacheStats, log *slog.Logger, next http.Handler) http.Handler {
 	return &middleware{name: "healthz", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != cfg.Server.Http.HealthzPath {
 			next.ServeHTTP(w, r)
@@ -59,6 +59,11 @@ func healthzHandler(cfg *config.Config, build domain.BuildInfo, startedAt time.T
 		if !startedAt.IsZero() {
 			uptime = int64(time.Since(startedAt).Seconds())
 		}
+		var cacheInfo healthzCache
+		if cache != nil {
+			entries, bytes, degraded := cache.Stats()
+			cacheInfo = healthzCache{Entries: entries, Bytes: bytes, Degraded: degraded}
+		}
 		payload := healthzPayload{
 			Status:    "ok",
 			Name:      cfg.App.Name,
@@ -69,10 +74,8 @@ func healthzHandler(cfg *config.Config, build domain.BuildInfo, startedAt time.T
 			Protocol:  "2026-07-28",
 			Transport: "streamable-http",
 			UptimeS:   uptime,
-			// transport 契约没有注入 cache 的通道（Build 只有 cfg/build/logger），
-			// 这两个字段先保持零值；探活只承诺「有响应即活着」。
-			Cache:    healthzCache{},
-			Upstream: healthzUpstream{Configured: cfg.ApiKey != "", BaseURL: cfg.Upstream.BaseURL},
+			Cache:     cacheInfo,
+			Upstream:  healthzUpstream{Configured: cfg.ApiKey != "", BaseURL: cfg.Upstream.BaseURL},
 		}
 		raw, err := json.Marshal(payload)
 		if err != nil {

@@ -36,6 +36,7 @@ type httpHandler struct {
 	build     domain.BuildInfo
 	log       *slog.Logger
 	startedAt time.Time
+	cache     CacheStats
 }
 
 // Name 返回传输名。
@@ -48,7 +49,7 @@ func (h *httpHandler) Serve(ctx context.Context, srv *mcp.Server) error {
 		return fmt.Errorf("allow_non_local_host=true 时 MUST 同时启用 auth_enabled")
 	}
 
-	handler, err := newHTTPHandler(&h.cfg, h.build, h.log, h.startedAt, srv)
+	handler, err := newHTTPHandler(&h.cfg, h.build, h.log, h.startedAt, h.cache, srv)
 	if err != nil {
 		return err
 	}
@@ -92,7 +93,7 @@ func (h *httpHandler) Serve(ctx context.Context, srv *mcp.Server) error {
 }
 
 func newHTTPHandler(cfg *config.Config, build domain.BuildInfo, log *slog.Logger,
-	startedAt time.Time, srv *mcp.Server) (http.Handler, error) {
+	startedAt time.Time, cache CacheStats, srv *mcp.Server) (http.Handler, error) {
 	policy, err := newOriginPolicy(cfg)
 	if err != nil {
 		return nil, err
@@ -101,5 +102,5 @@ func newHTTPHandler(cfg *config.Config, build domain.BuildInfo, log *slog.Logger
 		func(*http.Request) *mcp.Server { return srv },
 		&mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: cfg.Server.Http.JsonResponse},
 	)
-	return chain(cfg, build, log, startedAt, policy, mcpHandler), nil
+	return chain(cfg, build, log, startedAt, cache, policy, mcpHandler), nil
 }

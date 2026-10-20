@@ -83,13 +83,13 @@ var middlewareNames = []string{
 // 因为错一位的两种后果（浏览器客户端全挂 / SSE 静默卡死）都不报错。
 // 写法：从最内层往外包，所以代码顺序与请求经过顺序相反。
 func chain(cfg *config.Config, build domain.BuildInfo, log *slog.Logger, startedAt time.Time,
-	policy *originPolicy, mcpHandler http.Handler) http.Handler {
+	cache CacheStats, policy *originPolicy, mcpHandler http.Handler) http.Handler {
 	h := mcpHandler
 	h = bodyLimit(cfg, h)
 	h = authGuard(cfg, log, h)
 	h = hostGuard(cfg, log, h)
 	h = policy.handler(h)
-	h = healthzHandler(cfg, build, startedAt, log, h)
+	h = healthzHandler(cfg, build, startedAt, cache, log, h)
 	h = securityHeaders(h)
 	h = accessLog(log, cfg, h)
 	return recoverMW(log, h)

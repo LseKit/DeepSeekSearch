@@ -165,7 +165,7 @@ func serve(cfg *config.Config, tz *time.Location, stop <-chan struct{}, newClien
 	if regErr := tools.RegisterAll(srv, deps); regErr != nil {
 		return failRuntime(logger, closer, closeCache, stderr, "register_tools", regErr)
 	}
-	handler, err := transport.Build(cfg.Server.Transport, *cfg, build, logger)
+	handler, err := transport.BuildWithCache(cfg.Server.Transport, *cfg, build, logger, deps.Cache)
 	if err != nil {
 		return failRuntime(logger, closer, closeCache, stderr, "build_transport", err)
 	}

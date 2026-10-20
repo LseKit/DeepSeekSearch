@@ -87,7 +87,7 @@ func newTestMCP(build domain.BuildInfo) *mcp.Server {
 
 func newTestHandler(t *testing.T, cfg *config.Config, srv *mcp.Server) http.Handler {
 	t.Helper()
-	h, err := newHTTPHandler(cfg, testBuild, discardLogger(), time.Now(), srv)
+	h, err := newHTTPHandler(cfg, testBuild, discardLogger(), time.Now(), nil, srv)
 	if err != nil {
 		t.Fatalf("newHTTPHandler 返回错误: %v", err)
 	}
@@ -465,6 +465,65 @@ func TestHealthz(t *testing.T) {
 	})
 }
 
+type fakeCacheStats struct {
+	entries  int
+	bytes    int64
+	degraded bool
+}
+
+func (f fakeCacheStats) Stats() (entries int, bytes int64, degraded bool) {
+	return f.entries, f.bytes, f.degraded
+}
+
+// TestHealthzCacheStats 锁住 Contract 15 §七之三 的 cache 三字段：
+// 它们 MUST 来自注入的统计源，不能是恒零的占位值（degraded 恒 false 会掩盖缓存降级）。
+func TestHealthzCacheStats(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	h, err := newHTTPHandler(&cfg, testBuild, discardLogger(), time.Now(),
+		fakeCacheStats{entries: 42, bytes: 1048576, degraded: true}, newTestMCP(testBuild))
+	if err != nil {
+		t.Fatalf("newHTTPHandler() = %v", err)
+	}
+	ts := httptest.NewServer(h)
+	t.Cleanup(ts.Close)
+
+	res := doRequest(t, ts, http.MethodGet, "/healthz", nil, "")
+	if res.Status != http.StatusOK {
+		t.Fatalf("GET /healthz = %d, body=%s", res.Status, res.Body)
+	}
+	var out struct {
+		Cache struct {
+			Entries  int   `json:"entries"`
+			Bytes    int64 `json:"bytes"`
+			Degraded bool  `json:"degraded"`
+		} `json:"cache"`
+	}
+	if unmarshalErr := json.Unmarshal(res.Body, &out); unmarshalErr != nil {
+		t.Fatalf("healthz 不是 JSON: %v, body=%s", unmarshalErr, res.Body)
+	}
+	if out.Cache.Entries != 42 || out.Cache.Bytes != 1048576 || !out.Cache.Degraded {
+		t.Fatalf("cache = %+v, want {42 1048576 true}", out.Cache)
+	}
+}
+
+func TestBuildWithCache(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Default()
+	h, err := BuildWithCache("streamable-http", cfg, testBuild, discardLogger(), fakeCacheStats{})
+	if err != nil {
+		t.Fatalf("BuildWithCache(streamable-http) = %v", err)
+	}
+	if h.Name() != "streamable-http" {
+		t.Fatalf("Name() = %q, want streamable-http", h.Name())
+	}
+	if _, err := BuildWithCache("sse", cfg, testBuild, discardLogger(), nil); err == nil {
+		t.Fatal("BuildWithCache(sse) 未返回错误")
+	}
+}
+
 func TestAuth(t *testing.T) {
 	cfg := testConfig()
 	cfg.Server.Http.AuthEnabled = true
@@ -543,7 +602,7 @@ func TestMiddlewareOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newOriginPolicy 返回错误: %v", err)
 	}
-	h := chain(&cfg, testBuild, discardLogger(), time.Now(), policy,
+	h := chain(&cfg, testBuild, discardLogger(), time.Now(), nil, policy,
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 
 	got := make([]string, 0, len(middlewareNames))
