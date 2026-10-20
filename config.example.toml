@@ -591,6 +591,8 @@ dir = "Logs"
 #    2~3 个进程很常见，秒级时间戳下同秒启动的进程必然同名，两个进程各自 O_APPEND
 #    写同一个文件会让「单文件体积」「当日累计」两个配额统计都失真（它们各自在
 #    进程内存里），compress=true 时还可能 gzip 到对方正在写的文件。
+#    同进程同秒创建多个 writer（或同秒多进程）时，用 O_EXCL 依次追加 _1、_2 消歧：
+#    <prefix>_YYYYMMDD_HHMMSS_<PID>[_<n>].log。固定段仍是 日期_时间_PID。
 file_prefix = "DeepSeekSearch"
 
 # 🔴 文件名格式**固定**为 <file_prefix>_YYYYMMDD_HHMMSS_<PID>.log，不可配置。
