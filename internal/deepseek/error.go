@@ -22,8 +22,10 @@ import (
 var requestIDRe = regexp.MustCompile(`\(request_id:\s*([0-9a-fA-F-]{8,64})\)`)
 
 // 401 的 message 会回显 Key 后 4 位；落盘/返回前整体替换。
-var secretKVRe = regexp.MustCompile(`(?i)(api[_ ]?key|token|secret|authorization)\s*[:=]?\s*\S*`)
-var secretSkRe = regexp.MustCompile(`sk-[A-Za-z0-9]{8,}`)
+var (
+	secretKVRe = regexp.MustCompile(`(?i)(api[_ ]?key|token|secret|authorization)\s*[:=]?\s*\S*`)
+	secretSkRe = regexp.MustCompile(`sk-[A-Za-z0-9]{8,}`)
+)
 
 // upstreamError 是上游错误信封。Param 必须可缺省（实测恒不存在）。
 // Code/Type 只保留原文供排查，MUST NOT 参与错误分类。
@@ -52,10 +54,11 @@ func parseUpstreamError(status int, raw []byte, tool string) *domain.UpstreamErr
 	}
 	message := clipRunes(scrubSecrets(env.Error.Message), 512)
 	return &domain.UpstreamError{
-		Code:        codeForStatus(status),
-		HttpStatus:  status,
-		RequestId:   extractRequestID(message),
-		UpstreamMsg: message,
+		Code:         codeForStatus(status),
+		HttpStatus:   status,
+		RequestId:    extractRequestID(message),
+		UpstreamMsg:  message,
+		UpstreamType: env.Error.Type,
 	}
 }
 

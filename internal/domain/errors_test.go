@@ -174,6 +174,48 @@ func TestCodeOf(t *testing.T) {
 	}
 }
 
+func TestUpstreamTypeOf(t *testing.T) {
+	t.Parallel()
+
+	withType := NewUpstreamError(429, "", "rate limited", nil)
+	withType.UpstreamType = "rate_limit_error"
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"nil", nil, ""},
+		{"普通错误", errors.New("boom"), ""},
+		{"上游错误", withType, "rate_limit_error"},
+		{"包装后仍可提取", fmt.Errorf("wrap: %w", withType), "rate_limit_error"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := UpstreamTypeOf(tt.err); got != tt.want {
+				t.Fatalf("UpstreamTypeOf() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAppendUpstreamType(t *testing.T) {
+	t.Parallel()
+
+	withType := NewUpstreamError(429, "", "", nil)
+	withType.UpstreamType = "rate_limit_error"
+
+	got := AppendUpstreamType([]any{"code", 2429}, withType)
+	want := []any{"code", 2429, "upstream_type", "rate_limit_error"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("AppendUpstreamType() = %#v, want %#v", got, want)
+	}
+	empty := AppendUpstreamType([]any{"code", 2998}, errors.New("boom"))
+	if !reflect.DeepEqual(empty, []any{"code", 2998}) {
+		t.Fatalf("无 type 时不应追加字段: %#v", empty)
+	}
+}
+
 func TestIsRetryable(t *testing.T) {
 	t.Parallel()
 

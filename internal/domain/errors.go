@@ -32,12 +32,13 @@ type Coded interface {
 // HttpStatus / RequestId 沿用契约里的拼写，不按 Go 缩写真正常改名：下游任务
 // 逐字引用这些字段，改名会让契约与代码同时漂移。
 type UpstreamError struct {
-	Code        int    // 例如 2429
-	HttpStatus  int    //nolint:revive // 契约字段名，例如 429
-	RequestId   string //nolint:revive // 契约字段名，见 11 号 §3.1
-	UpstreamMsg string // 上游原文，可能含 Key 后 4 位，MUST NOT 进 Error()
-	cause       error  // 底层网络错误，可为 nil
-	details     map[string]any
+	Code         int    // 例如 2429
+	HttpStatus   int    //nolint:revive // 契约字段名，例如 429
+	RequestId    string //nolint:revive // 契约字段名，见 11 号 §3.1
+	UpstreamMsg  string // 上游原文，可能含 Key 后 4 位，MUST NOT 进 Error()
+	UpstreamType string // 上游 error.type 原文，仅供日志排查（Task-05 §3 要求 2.1），MUST NOT 参与分类
+	cause        error  // 底层网络错误，可为 nil
+	details      map[string]any
 }
 
 // Error 返回便于日志解析的固定格式，绝不包含 UpstreamMsg。
@@ -54,6 +55,25 @@ func (e *UpstreamError) Error() string {
 
 // Unwrap 暴露底层网络错误，供 errors.Is/As 继续下钻。
 func (e *UpstreamError) Unwrap() error { return e.cause }
+
+// UpstreamTypeOf 提取上游 error.type 原文，仅供日志排查（Task-05 §3 要求 2.1）。
+// MUST NOT 用它做错误分类：实测 401/404/429 的 type 都可能是 invalid_request_error。
+func UpstreamTypeOf(err error) string {
+	var ue *UpstreamError
+	if errors.As(err, &ue) {
+		return ue.UpstreamType
+	}
+	return ""
+}
+
+// AppendUpstreamType 在 type 非空时把 upstream_type 追加为日志字段。
+// 放在 domain 是为了让 search/fetch 共用同一份判断，避免两处漂移。
+func AppendUpstreamType(args []any, err error) []any {
+	if typ := UpstreamTypeOf(err); typ != "" {
+		return append(args, "upstream_type", typ)
+	}
+	return args
+}
 
 // ValidationError 是我方入参校验失败。
 //

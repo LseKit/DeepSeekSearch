@@ -116,10 +116,13 @@ func TestParseUpstreamError(t *testing.T) {
 
 	t.Run("429按status不按code", func(t *testing.T) {
 		t.Parallel()
-		raw := errorEnvelopeWithCode(t, "rate limited", "invalid_request_error")
+		raw := errorEnvelopeWithTypeAndCode(t, "rate limited", "rate_limit_error", "invalid_request_error")
 		up := parseUpstreamError(429, raw, "ds_search")
 		if up.Code != domain.CodeUpRateLimited {
 			t.Fatalf("Code = %d, want %d", up.Code, domain.CodeUpRateLimited)
+		}
+		if up.UpstreamType != "rate_limit_error" {
+			t.Fatalf("UpstreamType = %q, want rate_limit_error", up.UpstreamType)
 		}
 	})
 
@@ -293,16 +296,18 @@ func errorEnvelope(t *testing.T, message string) []byte {
 	return data
 }
 
-func errorEnvelopeWithCode(t *testing.T, message, code string) []byte {
+func errorEnvelopeWithTypeAndCode(t *testing.T, message, typ, code string) []byte {
 	t.Helper()
 	type envelope struct {
 		Error struct {
 			Message string `json:"message"`
+			Type    string `json:"type"`
 			Code    string `json:"code"`
 		} `json:"error"`
 	}
 	var env envelope
 	env.Error.Message = message
+	env.Error.Type = typ
 	env.Error.Code = code
 	data, err := json.Marshal(env)
 	if err != nil {

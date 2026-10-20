@@ -176,14 +176,14 @@ func (h *fetchHandler) upstream(ctx context.Context, rawURL string) (domain.Fetc
 		args := []any{"attempt", attempt, "ms", ms, "ok", err == nil, "url", h.redactedURL()}
 		if err != nil {
 			args = append(args, "code", domain.CodeOf(err))
+			args = domain.AppendUpstreamType(args, err)
 		}
 		h.logger.Info("call.upstream.done", args...)
 		if err == nil {
 			h.recordCircuit(nil)
 			return resp, nil
 		}
-		// 同 search：ctx 是 fn 实际收到的 context，避免与上层 totalCtx 的 timer 竞争
-		// 把总预算到期误判成单次尝试超时（2998）。
+		// 同 search：用 fn 实际收到的 ctx 判断，避免 totalCtx 的 timer 竞争把总预算到期误判成 2998。
 		if ctx.Err() != nil {
 			h.recordCircuit(err)
 			return domain.FetchResponse{}, h.totalTimeoutError()

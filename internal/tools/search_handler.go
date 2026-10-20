@@ -162,15 +162,14 @@ func (h *searchHandler) upstream(ctx context.Context, req *domain.SearchRequest)
 		args := []any{"attempt", attempt, "ms", ms, "ok", err == nil}
 		if err != nil {
 			args = append(args, "code", domain.CodeOf(err))
+			args = domain.AppendUpstreamType(args, err)
 		}
 		h.logger.Info("call.upstream.done", args...)
 		if err == nil {
 			h.recordCircuit(nil)
 			return resp, nil
 		}
-		// ctx 是 fn 实际收到的那个 context：singleflight 会为 owner 另建一个同截止时间的
-		// context，两个 timer 的触发有微秒级先后差。若只在上层看 totalCtx.Err()，
-		// 会偶发把「总预算到期」误判成「单次尝试超时」(2998)。这里判断最确定。
+		// ctx 是 fn 实际收到的 context；singleflight 另建的 totalCtx timer 有微秒级竞争，会偶发误判 2998。
 		if ctx.Err() != nil {
 			h.recordCircuit(err)
 			return domain.SearchResponse{}, h.totalTimeoutError()

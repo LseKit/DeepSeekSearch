@@ -9,6 +9,8 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,15 +26,20 @@ func TestHandleSearchErrors(t *testing.T) {
 	t.Run("上游429", func(t *testing.T) {
 		t.Parallel()
 		client := &fakeClient{searchFn: func(context.Context, domain.SearchRequest) (domain.SearchResponse, error) {
-			return domain.SearchResponse{}, domain.NewUpstreamError(429, "req-429", "rate limited", nil)
+			up := domain.NewUpstreamError(429, "req-429", "rate limited", nil)
+			up.UpstreamType = "invalid_request_error"
+			return domain.SearchResponse{}, fmt.Errorf("fake upstream 429: %w", up)
 		}}
-		deps, _ := newTestDeps(t, client, nil)
+		deps, logs := newTestDeps(t, client, nil)
 		payload := decodeError(t, invokeSearch(t, &deps, &searchInput{Query: "go"}))
 		if payload.Code != domain.CodeUpRateLimited || !payload.Retryable {
 			t.Fatalf("payload = %+v", payload)
 		}
 		if client.callCount() != 1 {
 			t.Fatalf("未配置重试时上游调用 = %d, want 1", client.callCount())
+		}
+		if !strings.Contains(logs.String(), `"upstream_type":"invalid_request_error"`) {
+			t.Fatalf("call.upstream.done 缺少 upstream_type 字段: %s", logs.String())
 		}
 	})
 
