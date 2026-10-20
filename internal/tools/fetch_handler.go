@@ -28,11 +28,12 @@ const (
 )
 
 type fetchHandler struct {
-	deps    *Deps
-	logger  *slog.Logger
-	started time.Time
-	params  fetchParams
-	rawURL  string
+	deps     *Deps
+	logger   *slog.Logger
+	started  time.Time
+	params   fetchParams
+	rawURL   string
+	cacheHit bool
 }
 
 // handleFetch 是 ds_fetch 的完整编排。
@@ -280,6 +281,7 @@ func (h *fetchHandler) commitFunc(entryKey string) func(context.Context, []byte)
 }
 
 func (h *fetchHandler) renderAndFinish(entry *cachedFetchEntry, fromCache bool) *mcp.CallToolResult {
+	h.cacheHit = fromCache
 	res, mode, err := h.render(entry, fromCache)
 	if err != nil {
 		return h.finish(errorResult(err, fetchToolName), false, err)
@@ -364,6 +366,9 @@ func (h *fetchHandler) finish(res *mcp.CallToolResult, billed bool, err error, e
 	}
 	args = append(args, extra...)
 	h.logger.Info("call.end", args...)
+	if h.deps.Usage != nil {
+		h.deps.Usage.Record(fetchToolName, billed, h.cacheHit, err)
+	}
 	if slow := h.deps.Cfg.Log.SlowMs; slow > 0 && ms > int64(slow) {
 		h.logger.Warn("warn.slow", "ms", ms)
 	}

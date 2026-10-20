@@ -31,6 +31,7 @@ type Deps struct {
 	Circuit      resilience.Circuit
 	Clock        resilience.Clock
 	StartedAt    time.Time
+	Usage        *UsageTracker
 	Build        domain.BuildInfo
 	Logger       *slog.Logger
 }
@@ -54,7 +55,7 @@ func RegisterAll(srv *mcp.Server, deps Deps) error { //nolint:gocritic // 签名
 	for _, tool := range Registry() {
 		tool.Register(srv, deps)
 	}
-	return registerResources(srv, &deps)
+	return registerResources(srv, deps)
 }
 
 const fallbackInternalPayload = `{"code":3099,"name":"LOC_INTERNAL","message":"内部错误，属于本工具自身缺陷","hint":"带上 call_id 与复现步骤提交 issue；不要原样重试。","retryable":false}`

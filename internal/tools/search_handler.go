@@ -29,10 +29,11 @@ const (
 )
 
 type searchHandler struct {
-	deps    *Deps
-	logger  *slog.Logger
-	started time.Time
-	params  searchParams
+	deps     *Deps
+	logger   *slog.Logger
+	started  time.Time
+	params   searchParams
+	cacheHit bool
 }
 
 // handleSearch 是 ds_search 的完整编排。
@@ -141,6 +142,7 @@ func (h *searchHandler) runUpstream(totalCtx, parentCtx context.Context, key str
 }
 
 func (h *searchHandler) renderAndFinish(env cachedSearchEnvelope, fromCache bool) *mcp.CallToolResult {
+	h.cacheHit = fromCache
 	res, total, results := h.render(env, fromCache)
 	billed := !fromCache && len(env.Response.Results) > 0
 	return h.finish(res, billed, nil,
@@ -251,6 +253,9 @@ func (h *searchHandler) finish(res *mcp.CallToolResult, billed bool, err error, 
 	}
 	args = append(args, extra...)
 	h.logger.Info("call.end", args...)
+	if h.deps.Usage != nil {
+		h.deps.Usage.Record(searchToolName, billed, h.cacheHit, err)
+	}
 	if slow := h.deps.Cfg.Log.SlowMs; slow > 0 && ms > int64(slow) {
 		h.logger.Warn("warn.slow", "ms", ms)
 	}

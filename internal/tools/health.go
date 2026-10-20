@@ -176,6 +176,9 @@ func (h *healthHandler) finish(res *mcp.CallToolResult, err error) *mcp.CallTool
 		args = append(args, "code", domain.CodeOf(err))
 	}
 	h.logger.Info("call.end", args...)
+	if h.deps.Usage != nil {
+		h.deps.Usage.Record("ds_health", false, false, err)
+	}
 	if slow := h.deps.Cfg.Log.SlowMs; slow > 0 && ms > int64(slow) {
 		h.logger.Warn("warn.slow", "ms", ms)
 	}
