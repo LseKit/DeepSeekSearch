@@ -34,7 +34,7 @@ func Load(configPath, envPath string) (Config, error) {
 	}
 	applyEnv(&cfg)
 
-	if err := checkPhaseOne(&cfg); err != nil {
+	if _, err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	return cfg, nil
@@ -45,7 +45,7 @@ func Load(configPath, envPath string) (Config, error) {
 func LoadFromEnvOnly() (Config, error) {
 	cfg := Default()
 	applyEnv(&cfg)
-	if err := checkPhaseOne(&cfg); err != nil {
+	if _, err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config: %w", err)
 	}
 	return cfg, nil
@@ -86,9 +86,14 @@ func markTomlSources(cfg *Config, md *toml.MetaData) {
 	}
 }
 
-// checkPhaseOne 是 A-02 阶段的启动检查；A-03 的 Validate 会复用它并补齐其余约束。
+// checkPhaseOne 是启动检查的前半段：凭据、阶段一禁用项与 stdio 的 stdout 冲突。
+// Validate 会复用它，再补齐枚举、数值区间与其余跨字段约束。
 func checkPhaseOne(cfg *Config) error {
 	var errs []error
+	if strings.TrimSpace(cfg.ApiKey) == "" {
+		errs = append(errs, configErr(domain.CodeLocNoAPIKey,
+			"DEEPSEEK_API_KEY 未配置：在 Config/.env 或环境变量中设置"))
+	}
 	if cfg.Synth.Enabled {
 		errs = append(errs, configErr(domain.CodeValSynthDisabled,
 			"synth.enabled 阶段一 MUST 为 false（阶段二能力，见 ADR-010）"))

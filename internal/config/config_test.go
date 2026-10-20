@@ -29,6 +29,7 @@ func TestDefault(t *testing.T) {
 		{name: "fetch 的 rps 默认 20", got: cfg.RateLimit.Fetch.Rps, want: 20.0},
 		{name: "在飞总额度默认 8", got: cfg.RateLimit.MaxInflight, want: 8},
 		{name: "search 最大尝试次数默认 4", got: cfg.Timeout.Search.MaxAttempts, want: 4},
+		{name: "search 总超时默认 67000", got: cfg.Timeout.Search.TotalTimeoutMs, want: 67000},
 		{name: "fetch 单次尝试默认 45000", got: cfg.Timeout.Fetch.PerAttemptMs, want: 45000},
 		{name: "fetch 缓存 TTL 默认 21600", got: cfg.Cache.TtlFetchS, want: 21600},
 		{name: "search 缓存 TTL 默认 180", got: cfg.Cache.TtlSearchS, want: 180},

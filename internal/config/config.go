@@ -334,7 +334,7 @@ func defaultTimeout() TimeoutConfig {
 		DialMs:           5000,
 		TLSHandshakeMs:   5000,
 		ResponseHeaderMs: 30000,
-		Search:           TimeoutToolConfig{PerAttemptMs: 12000, MaxAttempts: 4, TotalTimeoutMs: 60000},
+		Search:           TimeoutToolConfig{PerAttemptMs: 12000, MaxAttempts: 4, TotalTimeoutMs: 67000},
 		Fetch:            TimeoutToolConfig{PerAttemptMs: 45000, MaxAttempts: 2, TotalTimeoutMs: 110000},
 	}
 }
