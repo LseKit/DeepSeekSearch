@@ -84,17 +84,7 @@ func (c *client) Search(ctx context.Context, req domain.SearchRequest) (domain.S
 	if status != http.StatusOK {
 		return domain.SearchResponse{}, parseUpstreamError(status, raw, "ds_search")
 	}
-	if len(raw) == 0 {
-		return domain.SearchResponse{}, fmt.Errorf("deepseek: 解析响应失败: %w", domain.NewUpstreamParseError(0, errors.New("响应体为空")))
-	}
-	var resp domain.SearchResponse
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return domain.SearchResponse{}, fmt.Errorf("deepseek: 解析响应失败: %w", domain.NewUpstreamParseError(len(raw), err))
-	}
-	if resp.Results == nil {
-		resp.Results = []domain.SearchResult{}
-	}
-	return resp, nil
+	return parseSearchResponse(raw)
 }
 
 // Fetch 调用 POST /v1/tools/fetch。
@@ -109,14 +99,7 @@ func (c *client) Fetch(ctx context.Context, req domain.FetchRequest) (domain.Fet
 	if status != http.StatusOK {
 		return domain.FetchResponse{}, parseUpstreamError(status, raw, "ds_fetch")
 	}
-	if len(raw) == 0 {
-		return domain.FetchResponse{}, fmt.Errorf("deepseek: 解析响应失败: %w", domain.NewUpstreamParseError(0, errors.New("响应体为空")))
-	}
-	var resp domain.FetchResponse
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return domain.FetchResponse{}, fmt.Errorf("deepseek: 解析响应失败: %w", domain.NewUpstreamParseError(len(raw), err))
-	}
-	return resp, nil
+	return parseFetchResponse(raw)
 }
 
 // Ping 用 GET /v1/tools/search 期望 405 探活；405 不计费（ADR-015）。

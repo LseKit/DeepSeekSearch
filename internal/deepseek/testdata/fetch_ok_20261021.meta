@@ -1,0 +1,6 @@
+captured_at: 2026-10-21
+endpoint: POST https://api.deepseek.com/v1/tools/fetch
+request_body: {"url":"https://example.com"}
+http_status: 200
+request_id: 无（200 响应不含 request_id）
+redaction: 无；目标为公开示例页，未包含 API Key

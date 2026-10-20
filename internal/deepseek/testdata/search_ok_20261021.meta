@@ -1,0 +1,6 @@
+captured_at: 2026-10-21
+endpoint: POST https://api.deepseek.com/v1/tools/search
+request_body: {"query":"golang","count":3}
+http_status: 200
+request_id: 无（200 响应不含 request_id）
+redaction: 无；内容为公开搜索结果，未包含 API Key
