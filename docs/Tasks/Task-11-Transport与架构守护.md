@@ -189,6 +189,7 @@ recover → accessLog → securityHeaders → healthz → crossOrigin → hostGu
 | 10 | `crossOrigin`：`http.NewCrossOriginProtection()` + `AddTrustedOrigin(allowed_origins...)`。🔴 MUST 位于 `hostGuard` 与 `authGuard` **之外**、`healthz` **之内**；`enable_cross_origin_protection=false` 时该层 MUST 完全透传（不改变 `ResponseWriter` 的包装层数，否则 §3 第 3 条的 `Flush`/`Unwrap` 又要重验一遍）。<br>🔴 **实现补充（实测 Go 1.27）**：标准库 `CrossOriginProtection` 把 `OPTIONS` 视为安全方法**一律放行**，且只拒绝、**不发** `Access-Control-Allow-*`。因此本层 MUST 自行：① 对可信 `Origin` 的 preflight 回 `204` + `Access-Control-Allow-Origin/Methods/Headers`；② 对不可信 `Origin` 的 preflight 直接 `403`（不是 `401`）；③ 对可信 `Origin` 的非 preflight 响应补 `Access-Control-Allow-Origin`，否则浏览器读不到 `401/403` 错误体 |
 | 11 | `bodyLimit`：`http.MaxBytesReader(w, r.Body, max_request_body_bytes)` |
 | 12 | `/healthz` 响应字段与 `15-协议契约` §七之三**逐字一致** |
+| 12.1 | 🔴 **`cache` 三字段 MUST 来自注入的统计源，MUST NOT 恒为零值**：`transport` 定义 `CacheStats` 接口（避免 import `resilience`，10 号矩阵），`BuildWithCache` 把它传给 `healthz`；`cache == nil` 时才允许零值。测试 MUST 用假 `Stats` 断言 `entries`/`bytes`/`degraded` 原样出现在 JSON 里 —— `degraded` 恒 false 会掩盖「SQLite 已降级为直连」 |
 | 13 | 优雅关闭：`http.Server.Shutdown(ctx)` 带 15s 超时 |
 | 14 | 启动日志打 `app.ready` 含实际监听地址与 `config_sha256` |
 | 15 | 🔴 中间件链的装配顺序 MUST 由**一个**函数（`chain(...)`）按 §1 那条链的字面顺序写死，MUST NOT 在各处分别 `Wrap`。理由：顺序错一位的后果是「浏览器客户端全挂」或「SSE 静默卡死 3 分钟」，都属于**不报错**的故障；集中在一处才能让 review 和 `TestMiddlewareOrder` 有唯一锚点 |

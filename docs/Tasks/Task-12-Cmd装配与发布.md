@@ -60,6 +60,7 @@
 | 13 | 🔴 **发布只推 tag**：`git push origin "${VERSION}"`。原写法 `git push origin main --follow-tags` 与 `main` 分支保护冲突（Scorecard 与社区规范通常要求禁直推 `main`），见 `16-技术债登记表` T7。若仓库确实未开分支保护，`git push origin main` 可作为**额外一步**手工执行 |
 | 14 | 🔴 **发布命令里的版本变量 MUST 写 `${VERSION}`，MUST NOT 写 `$(VERSION)`**。后者在 bash 里是**命令替换**（「执行名为 VERSION 的命令」），展开为空串 ⇒ `grep -F ""` 匹配一切 ⇒ 版本检查永远假绿。见 `17-版本与发布契约` §七 的「变量语法铁律」 |
 | 15 | 🔴 **`--version` 的单元测试 MUST NOT 硬断言 `v0.1.0`**。`go test ./cmd/...` 不注入 `-ldflags`，`version` 变量是编译期默认值（`v0.0.0-dev`）。正确写法：`main_test.go` 用 `package main`，测试里直接给 `version` 变量赋值，断言「输出包含**被赋的那个值**」 |
+| 15.1 | 🔴 **装配层 MUST 用 `transport.BuildWithCache(..., deps.Cache)`**，把真实的 `Stats()` 注入 `/healthz`（`Task-11` A-02 要求 12.1）。用 `Build` 会让 `cache.entries/bytes/degraded` 恒为零值；MUST NOT 让 transport 直接 import `resilience` |
 
 ### 4 禁止事项
 

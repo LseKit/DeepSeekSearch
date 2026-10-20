@@ -204,7 +204,7 @@ $ go test ./internal/deepseek/ -v -run TestClient
 |:-:|---|---|
 | 1 | `parseUpstreamError(status int, raw []byte, tool string) *domain.UpstreamError`（`tool` ∈ `ds_search`/`ds_fetch`，用于 2404 的 hint 分流） |
 | 2 | 🔴 映射规则**四条**（完整理由见 `14-错误契约` §2.2 表注）：① 已枚举的 11 个状态 → `Code = 2000 + status`；② 未枚举的 **5xx** → `2500`（✅ 可重试）；③ 未枚举的 4xx **与一切 1xx/3xx** → `2000`（❌ 不可重试 —— 3xx 走到这里说明重定向已耗尽，重试必然拿到同一个重定向）；④ **`status == 0`（拿不到响应）→ `2998`**。真实状态码一律由 `upstream_http` 带出，不因兜底而丢失 |
-| 2.1 | 🔴 MUST NOT 读 `error.code` 或 `error.type` 做分支 —— 401/404/429 的 `code` 实测全是 `invalid_request_error`（见 §1）。二者的值只原样记入日志字段 `upstream_type` 供人工排查 |
+| 2.1 | 🔴 MUST NOT 读 `error.code` 或 `error.type` 做分支 —— 401/404/429 的 `code` 实测全是 `invalid_request_error`（见 §1）。二者的值只原样记入日志字段 `upstream_type` 供人工排查（`error.type` 存入 `domain.UpstreamError.UpstreamType`，调用方用 `domain.UpstreamTypeOf` / `domain.AppendUpstreamType` 读取与拼字段） |
 | 3 | `request_id` 正则：`\(request_id:\s*([0-9a-fA-F-]{8,64})\)`。提取失败时 `RequestId` 留空，MUST NOT 报错 |
 | 4 | `Error()` 输出格式固定：`upstream: <code> <NAME> (http <status>, request_id=<id>)`，便于日志解析。**MUST NOT** 含 Key 的任何片段 |
 | 5 | 2404 的 `Hint` MUST 按 `tool` 分流：`ds_fetch` 列 7 种成因（含实测抓不到的站点清单）；`ds_search` 指向 `base_url` 配错。两套文案逐字取自 `14-错误契约` §2.3.1 |
