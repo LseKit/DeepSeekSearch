@@ -1,8 +1,34 @@
-Bin/
-Config/.env
-Data/
-Logs/
+# ---- 构建产物 ----
+/Bin/
+*.exe
+*.test
+*.out
+
+# ---- 运行时数据（含缓存与日志）----
+/Data/
+/Logs/
+*.log
+*.log.gz
+
+# ---- 密钥（绝对不许提交）----
+/Config/.env
+.env
+*.key
+*.pem
+
+# ---- 测试与覆盖率 ----
 coverage.out
 coverage.html
-*.log
+*.cover
+
+# ---- 编辑器 / 系统 ----
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# ---- 本地临时 ----
+/tmp/
+*.bak

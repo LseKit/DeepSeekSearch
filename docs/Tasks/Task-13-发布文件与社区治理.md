@@ -62,7 +62,7 @@ Task-01 建的是「能让 `make build` 通过」的最小骨架。本任务把�
 | 4 | `README.md` 含 `## 已知限制` 章节，且列出 **≥9 条**编号项（骨架当前就是 9 条；第 1 条 MUST 是「部分主流站点抓不到」） | `awk '/^## 已知限制/,/^## [^已]/' README.md \| grep -cE '^[0-9]+\. '` ≥ 9 |
 | 5 | `README.md` 含两种传输的客户端配置片段（`stdio` 与 `streamable-http` 各一段） | 人工核对 |
 | 6 | `CHANGELOG.md` 含 `## [未发布]` 与 `## [v0.1.0]` 两段 | `grep -c '## \['` = 2 |
-| 7 | `CHANGELOG.md` 的 `v0.1.0` 段含「已知限制」小节 | `grep -A20 'v0.1.0' CHANGELOG.md \| grep -c '已知限制'` = 1 |
+| 7 | `CHANGELOG.md` 的 `v0.1.0` 段含「已知限制」小节 | `awk '/^## \[v0\.1\.0\]/{f=1} f' CHANGELOG.md \| grep -c '已知限制'` = 1。🔴 原判据用 `grep -A20 'v0.1.0'`，而「已知限制」在标题后第 29 行 ⇒ 永远数到 0；判据改成「从 v0.1.0 段抽到文件末尾」（它是最后一节） |
 | 8 | `SECURITY.md` 含四要素：支持版本表 / 私密上报链接 / 响应时限 / 「哪些不算漏洞」 | 人工核对四项 |
 | 9 | `SECURITY.md` MUST NOT 让漏洞走公开 issue | `grep -c '公开 issue' SECURITY.md` ≥ 1 且上下文是否定 |
 | 10 | `.gitignore` 含 `Bin/` `Data/` `Logs/` `Config/.env` `coverage.out` | `grep -c 'Config/.env'` = 1 |
@@ -538,6 +538,10 @@ $ grep -cE 'v[0-9]+\.[0-9]+\.[0-9]+' README.md
 
 $ grep -c '## \[' CHANGELOG.md
 2
+
+# 🔴 原判据是 grep -A20：v0.1.0 标题后第 29 行才是「已知限制」，-A20 恒为 0
+$ awk '/^## \[v0\.1\.0\]/{f=1} f' CHANGELOG.md | grep -c '已知限制'
+1
 
 $ grep -c 'Config/.env' .gitignore
 1
