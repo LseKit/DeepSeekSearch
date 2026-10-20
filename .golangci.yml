@@ -1,0 +1,75 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  build-tags:
+    - integration
+
+linters:
+  default: none
+  enable:
+    - errcheck        # 错误必须处理
+    - govet           # 官方 vet
+    - ineffassign     # 无效赋值
+    - staticcheck     # 静态分析（含 SA 系列）
+    - unused          # 未使用的标识符
+    - bodyclose       # HTTP 响应体必须关闭
+    - contextcheck    # 必须传 ctx
+    - copyloopvar     # 循环变量捕获
+    - errorlint       # 错误比较必须用 errors.Is/As
+    - exhaustive      # switch 必须覆盖全部枚举
+    - gocritic        # 常见反模式
+    - gosec           # 安全
+    - misspell        # 拼写
+    - nilerr          # err != nil 却 return nil
+    - noctx           # 禁止无 ctx 的 http 请求
+    - prealloc        # 可预分配切片
+    - revive          # 风格（替代 golint）
+    - rowserrcheck    # sql.Rows.Err 必须检查
+    - sqlclosecheck   # sql 资源必须关闭
+    - unconvert       # 多余类型转换
+    - unparam         # 未使用参数
+    - whitespace      # 多余空行
+    - wrapcheck       # 跨包错误必须 wrap
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    revive:
+      rules:
+        - name: exported            # 导出符号必须有注释
+        - name: package-comments    # 包必须有包注释
+        - name: indent-error-flow
+        - name: range
+        - name: var-naming
+        - name: unexported-return   # 导出函数不得返回未导出类型
+    wrapcheck:
+      ignoreSigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # 测试文件放宽：允许长函数、允许重复
+    - path: _test\.go
+      linters: [funlen, gocognit, gocyclo, dupl, errcheck]
+    # 🔴 错误码常量表不查注释。文件名是 codes.go（Task-02 §2 创建的就是它），
+    #    原写 codes_gen\.go —— 那个文件从不存在，于是这条排除**永远不匹配**，
+    #    revive 会对 41 个 Code* 常量逐个报「缺注释」；而它们的语义真源是
+    #    Contract/14-错误契约.md §二，在常量上再抄一遍注释只会造出第二份会漂移的真源。
+    - path: internal/domain/codes\.go
+      linters: [revive]
+
+  # 规模红线（由 Task-11 的自定义检查脚本 + 本 linter 共同守护）
