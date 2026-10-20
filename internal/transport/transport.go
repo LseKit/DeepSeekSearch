@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -32,6 +33,10 @@ func Build(name string, cfg config.Config, build domain.BuildInfo, logger *slog.
 	switch name {
 	case "stdio":
 		return &stdioHandler{cfg: cfg, build: build, log: logger}, nil
+	case "streamable-http":
+		// transport 契约没有 Clock 注入点；uptime 只用于 /healthz 展示，
+		// 业务时间（TTL/跨日）不经过这里。进程启动时刻在此取一次。
+		return &httpHandler{cfg: cfg, build: build, log: logger, startedAt: time.Now()}, nil
 	default:
 		return nil, fmt.Errorf("未知传输 %q（可用：%s）", name, strings.Join(Available(), ", "))
 	}

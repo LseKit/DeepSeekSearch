@@ -32,6 +32,8 @@ const initializedNotification = `{"jsonrpc":"2.0","method":"notifications/initia
 
 const noiseCallRequest = `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"noise","arguments":{}}}`
 
+const stubCallRequest = `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"stub","arguments":{}}}`
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -168,6 +170,15 @@ func (f *stdioFixture) serve(t *testing.T) <-chan error {
 			Content: []mcp.Content{&mcp.TextContent{Text: "ok"}},
 		}, nil
 	})
+	srv.AddTool(&mcp.Tool{
+		Name:        "stub",
+		Description: "tests only",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	}, func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "stub-ok"}},
+		}, nil
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	f.cancel = cancel
@@ -248,6 +259,31 @@ func (f *stdioFixture) stderrText(t *testing.T) string {
 		t.Fatalf("读取 stderr 临时文件失败: %v", err)
 	}
 	return string(raw)
+}
+
+// TestProtocol_StdioToolsCall 是 P17：stdio 端到端一次 tools/call（stub 工具，不计费），
+// 且协议管道里只有合法 JSON-RPC 帧。
+func TestProtocol_StdioToolsCall(t *testing.T) {
+	f := newStdioFixture(t)
+	errc := f.serve(t)
+
+	f.send(t, initializeRequest)
+	if frame := f.readFrame(t); len(frame.Result) == 0 {
+		t.Fatalf("initialize 响应没有 result: error=%s", frame.Error)
+	}
+	f.send(t, initializedNotification)
+	f.send(t, stubCallRequest)
+
+	frame := f.readFrame(t)
+	if len(frame.Result) == 0 {
+		t.Fatalf("tools/call 响应没有 result: error=%s", frame.Error)
+	}
+	if !strings.Contains(string(frame.Result), "stub-ok") {
+		t.Fatalf("tools/call 结果不是 stub-ok: %s", frame.Result)
+	}
+	for _, line := range f.finish(t, errc) {
+		parseFrame(t, line)
+	}
 }
 
 func TestStdio_NoStdoutPollution(t *testing.T) {
