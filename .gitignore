@@ -1,0 +1,8 @@
+Bin/
+Config/.env
+Data/
+Logs/
+coverage.out
+coverage.html
+*.log
+.DS_Store
