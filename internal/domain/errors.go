@@ -160,13 +160,30 @@ func NewLocalError(code int, detail string, extra map[string]any) *LocalError {
 	return &LocalError{code: code, detail: detail, extra: extra}
 }
 
+// hintUpNotFoundSearch 是 ds_search 的 2404 hint。
+// 搜索端点 404 与 fetch 的 404 语义完全不同：前者几乎总是 base_url 配错，
+// 让调用方去换 query 方向只会浪费一次往返（14 号 §2.3.1）。
+const hintUpNotFoundSearch = "搜索端点返回 404，通常是 [upstream].base_url 配置错误（不是查询无结果 —— 查询无结果会返回空列表而非错误）。请核对 base_url 是否以 /v1 结尾且拼写正确。"
+
 // ToPayload 把任意错误归类成统一的 9 字段错误体。
+//
+// tool 只影响 2404 的 hint：ds_search 的 404 是 base_url 配错，ds_fetch 的 404
+// 是取不到正文；空串与 ds_health 都按 ds_fetch 处理（11 号 §一）。
 //
 // 判定顺序是契约（14 号 §1.3），先命中先返回，MUST NOT 调换：
 // Coded → UpstreamError → 网络错误 → 3099。
 // 第 3 步不能省：省了以后网络错误会落到第 4 步，被归成不可重试的 3099，
 // 于是「网络错误可重试」的承诺永远不生效。
-func ToPayload(err error) ErrorPayload {
+func ToPayload(err error, tool string) ErrorPayload {
+	p := classifyPayload(err)
+	if p.Code == CodeUpNotFound && tool == "ds_search" {
+		p.Hint = hintUpNotFoundSearch
+	}
+	return p
+}
+
+// classifyPayload 按四步顺序归类，不处理按工具分流的 hint。
+func classifyPayload(err error) ErrorPayload {
 	var coded Coded
 	if errors.As(err, &coded) {
 		p := payloadFor(coded.Code())
@@ -202,7 +219,7 @@ func ToPayload(err error) ErrorPayload {
 }
 
 // CodeOf 返回错误对应的数字码；分类规则与 ToPayload 完全一致。
-func CodeOf(err error) int { return ToPayload(err).Code }
+func CodeOf(err error) int { return ToPayload(err, "").Code }
 
 // IsRetryable 只查 CodeRegistry 的 Retryable 标志，MUST NOT 用错误字符串判断。
 func IsRetryable(err error) bool {

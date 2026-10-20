@@ -63,7 +63,7 @@ func TestToPayload(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			p := ToPayload(tt.err)
+			p := ToPayload(tt.err, "")
 			info, ok := CodeRegistry[tt.wantCode]
 			if !ok {
 				t.Fatalf("CodeRegistry 缺少 %d", tt.wantCode)
@@ -90,11 +90,41 @@ func TestToPayload(t *testing.T) {
 	}
 }
 
+func TestToPayloadToolHint(t *testing.T) {
+	t.Parallel()
+
+	err := NewUpstreamError(404, "rid-1", "failed to fetch URL", nil)
+	fetch := ToPayload(err, "ds_fetch")
+	search := ToPayload(err, "ds_search")
+
+	if want := CodeRegistry[CodeUpNotFound].Hint; fetch.Hint != want {
+		t.Errorf("ds_fetch Hint = %q, want CodeRegistry 的 fetch 版 %q", fetch.Hint, want)
+	}
+	if search.Hint != hintUpNotFoundSearch {
+		t.Errorf("ds_search Hint = %q, want %q", search.Hint, hintUpNotFoundSearch)
+	}
+	if fetch.Hint == search.Hint {
+		t.Error("ds_fetch 与 ds_search 的 2404 hint 必须不同")
+	}
+	if got := ToPayload(err, "").Hint; got != fetch.Hint {
+		t.Errorf("空串 Hint = %q, 应按 ds_fetch 处理", got)
+	}
+	if got := ToPayload(err, "ds_health").Hint; got != fetch.Hint {
+		t.Errorf("ds_health Hint = %q, 应按 ds_fetch 处理", got)
+	}
+
+	// tool 只影响 2404，其他码的 hint 不得变化。
+	rate := NewUpstreamError(429, "rid-2", "rate limited", nil)
+	if a, b := ToPayload(rate, "ds_search").Hint, ToPayload(rate, "ds_fetch").Hint; a != b {
+		t.Errorf("非 2404 的 hint 被 tool 影响：%q != %q", a, b)
+	}
+}
+
 func TestToPayloadPreservesUpstreamFields(t *testing.T) {
 	t.Parallel()
 
 	err := NewUpstreamError(404, "9b8f3625", "failed to fetch URL", nil)
-	p := ToPayload(err)
+	p := ToPayload(err, "")
 
 	if p.UpstreamHttp != 404 {
 		t.Errorf("UpstreamHttp = %d, want 404", p.UpstreamHttp)
@@ -111,7 +141,7 @@ func TestToPayloadTruncatesUpstreamMsgByRune(t *testing.T) {
 	t.Parallel()
 
 	msg := strings.Repeat("错", 600)
-	p := ToPayload(NewUpstreamError(500, "rid", msg, nil))
+	p := ToPayload(NewUpstreamError(500, "rid", msg, nil), "")
 
 	if got, want := len([]rune(p.UpstreamMsg)), 512; got != want {
 		t.Fatalf("UpstreamMsg rune 数 = %d, want %d", got, want)
@@ -224,7 +254,7 @@ func TestNewUpstreamParseError(t *testing.T) {
 	if up.Code != CodeUpParse || up.HttpStatus != 200 {
 		t.Errorf("Code/HttpStatus = %d/%d, want %d/200", up.Code, up.HttpStatus, CodeUpParse)
 	}
-	if p := ToPayload(err); p.Code != CodeUpParse || p.UpstreamHttp != 200 {
+	if p := ToPayload(err, ""); p.Code != CodeUpParse || p.UpstreamHttp != 200 {
 		t.Errorf("ToPayload = %d/http %d, want %d/200", p.Code, p.UpstreamHttp, CodeUpParse)
 	}
 }
@@ -237,7 +267,7 @@ func TestNewNetworkError(t *testing.T) {
 		t.Error("未暴露底层网络错误")
 	}
 
-	p := ToPayload(err)
+	p := ToPayload(err, "")
 	if p.Code != CodeUpNetwork || !p.Retryable {
 		t.Errorf("Code/Retryable = %d/%v, want %d/true", p.Code, p.Retryable, CodeUpNetwork)
 	}
@@ -261,7 +291,7 @@ func TestNewValidationError(t *testing.T) {
 			t.Errorf("Error() = %q, 缺少 %q", e.Error(), want)
 		}
 	}
-	if p := ToPayload(e); p.Code != CodeValCountRange || p.Retryable {
+	if p := ToPayload(e, ""); p.Code != CodeValCountRange || p.Retryable {
 		t.Errorf("ToPayload = %d/retryable %v", p.Code, p.Retryable)
 	}
 }
@@ -279,7 +309,7 @@ func TestNewLocalError(t *testing.T) {
 		t.Errorf("Error() = %q, 缺少错误名", e.Error())
 	}
 
-	p := ToPayload(e)
+	p := ToPayload(e, "")
 	if p.Details["queue_depth"] != 12 || p.Details["waited_ms"] != 30000 {
 		t.Errorf("Details = %#v, want 原样透传 Extra", p.Details)
 	}
