@@ -84,7 +84,6 @@ type ServerHttpConfig struct { //nolint:revive // 契约类型名，见 Task-03 
 // UpstreamConfig 管上游 DeepSeek HTTP API 的连接参数。
 type UpstreamConfig struct {
 	BaseURL          string `toml:"base_url"`
-	TimeoutMs        int    `toml:"timeout_ms"`
 	SelfTestOnStart  bool   `toml:"self_test_on_start"`
 	UserAgent        string `toml:"user_agent"`
 	MaxResponseBytes int64  `toml:"max_response_bytes"`
@@ -311,7 +310,6 @@ func defaultServer() ServerConfig {
 func defaultUpstream() UpstreamConfig {
 	return UpstreamConfig{
 		BaseURL:          "https://api.deepseek.com",
-		TimeoutMs:        60000,
 		SelfTestOnStart:  false,
 		UserAgent:        "",
 		MaxResponseBytes: 8388608,

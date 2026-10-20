@@ -131,11 +131,6 @@ func TestValidate(t *testing.T) {
 			wantErr: []string{"server.http.path"},
 		},
 		{
-			name:    "upstream timeout 小于 per_attempt",
-			mutate:  func(c *Config) { c.Upstream.TimeoutMs = 10000 },
-			wantErr: []string{"upstream.timeout_ms"},
-		},
-		{
 			name:    "非法 CIDR",
 			mutate:  func(c *Config) { c.Security.BlockedCIDRs = []string{"not-a-cidr"} },
 			wantErr: []string{"security.blocked_cidrs"},

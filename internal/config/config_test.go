@@ -24,7 +24,6 @@ func TestDefault(t *testing.T) {
 		{name: "监听地址默认回环", got: cfg.Server.Http.Host, want: "127.0.0.1"},
 		{name: "监听端口默认 8765", got: cfg.Server.Http.Port, want: 8765},
 		{name: "上游地址默认官方", got: cfg.Upstream.BaseURL, want: "https://api.deepseek.com"},
-		{name: "上游超时默认 60000", got: cfg.Upstream.TimeoutMs, want: 60000},
 		{name: "search 的 rps 默认 30", got: cfg.RateLimit.Search.Rps, want: 30.0},
 		{name: "fetch 的 rps 默认 20", got: cfg.RateLimit.Fetch.Rps, want: 20.0},
 		{name: "在飞总额度默认 8", got: cfg.RateLimit.MaxInflight, want: 8},

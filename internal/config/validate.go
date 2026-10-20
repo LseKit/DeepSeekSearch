@@ -77,18 +77,9 @@ func (c *Config) validateUpstream() []error {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
 			"upstream.base_url 必须是合法的 https URL 且包含 host，实际 %q", c.Upstream.BaseURL))
 	}
-	if c.Upstream.TimeoutMs < 1 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"upstream.timeout_ms 必须 ≥1，实际 %d", c.Upstream.TimeoutMs))
-	}
 	if c.Upstream.MaxResponseBytes < 1024 {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
 			"upstream.max_response_bytes 必须 ≥1024，实际 %d", c.Upstream.MaxResponseBytes))
-	}
-	need := max(c.Timeout.Search.PerAttemptMs, c.Timeout.Fetch.PerAttemptMs)
-	if need > 0 && c.Upstream.TimeoutMs < need {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"upstream.timeout_ms 必须 ≥ 各 per_attempt_ms 的最大值 %d，实际 %d", need, c.Upstream.TimeoutMs))
 	}
 	return errs
 }
