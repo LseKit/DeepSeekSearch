@@ -8,7 +8,7 @@ package resilience
 
 import "time"
 
-// Config 是限流之外三个保护器的依赖参数，不包含业务语义。
+// Config 是限流之外各保护器的依赖参数，不包含业务语义。
 type Config struct {
 	RetryEnabled       bool
 	MaxAttempts        int
@@ -28,4 +28,21 @@ type Config struct {
 	CircuitFailThreshold  int
 	CircuitOpenMs         int
 	CircuitHalfOpenProbes int
+
+	CacheDbPath         string
+	CacheMaxEntries     int
+	CacheMaxBytesMB     int
+	CacheMaxEntryKB     int
+	CachePruneIntervalS int
+	Clock               Clock
+	Logger              cacheLogger
+}
+
+// cacheLogger 是注入给缓存层的窄日志接口。
+//
+// resilience 不允许 import internal/logging（10 号 §2.5），因此用接口接收
+// *slog.Logger；事件名仍以 Task-04 A-02 为唯一真源。
+type cacheLogger interface {
+	Warn(msg string, args ...any)
+	Info(msg string, args ...any)
 }
