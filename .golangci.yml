@@ -71,5 +71,9 @@ issues:
     #    Contract/14-错误契约.md §二，在常量上再抄一遍注释只会造出第二份会漂移的真源。
     - path: internal/domain/codes\.go
       linters: [revive]
+    # 事件名唯一真源是 Task-04 A-02 §3.1。逐常量写注释会造出第二份会漂移的
+    # 真源，并让 `grep -c 'Ev[A-Z]' events.go` 的 24 计数被注释行翻倍。
+    - path: internal/logging/events\.go
+      linters: [revive]
 
   # 规模红线（由 Task-11 的自定义检查脚本 + 本 linter 共同守护）

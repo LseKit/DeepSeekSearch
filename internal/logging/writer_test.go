@@ -74,7 +74,7 @@ func TestRotatingWriter(t *testing.T) {
 		writeString(t, w, strings.Repeat("x", 12)+"\n")
 		writeString(t, w, "drop\n")
 
-		if !strings.Contains(stderr.String(), "event=warn.log_quota") ||
+		if !strings.Contains(stderr.String(), "msg=warn.log_quota") ||
 			!strings.Contains(stderr.String(), "config_sha256=sha-test-1234") {
 			t.Fatalf("text 格式事件不正确: %q", stderr.String())
 		}

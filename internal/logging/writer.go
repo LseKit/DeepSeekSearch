@@ -22,8 +22,8 @@ import (
 const (
 	dateLayout     = "2006-01-02"
 	nameTimeLayout = "20060102_150405"
-	evLogRotate    = "log.rotate"
-	evWarnLogQuota = "warn.log_quota"
+	evLogRotate    = EvLogRotate
+	evWarnLogQuota = EvWarnLogQuota
 )
 
 // Clock 是日志包需要的最小时间接口，由装配层注入。
@@ -293,7 +293,7 @@ func (w *RotatingWriter) writeEventLocked(level, event, reason string) {
 type logEventRecord struct {
 	Time         string `json:"time"`
 	Level        string `json:"level"`
-	Event        string `json:"event"`
+	Msg          string `json:"msg"`
 	Reason       string `json:"reason,omitempty"`
 	DroppedLines int64  `json:"dropped_lines"`
 	ConfigSha    string `json:"config_sha256"`
@@ -302,7 +302,7 @@ type logEventRecord struct {
 func (w *RotatingWriter) eventLineLocked(level, event, reason string) []byte {
 	now := w.clk.Now().In(w.cfg.TZ).Format(w.cfg.TsFormat)
 	if w.cfg.Format == "text" {
-		line := fmt.Sprintf("time=%q level=%s event=%s", now, level, event)
+		line := fmt.Sprintf("time=%q level=%s msg=%s", now, level, event)
 		if reason != "" {
 			line += fmt.Sprintf(" reason=%q", reason)
 		}
@@ -312,7 +312,7 @@ func (w *RotatingWriter) eventLineLocked(level, event, reason string) []byte {
 	data, err := json.Marshal(logEventRecord{
 		Time:         now,
 		Level:        level,
-		Event:        event,
+		Msg:          event,
 		Reason:       reason,
 		DroppedLines: w.droppedLines,
 		ConfigSha:    w.cfg.ConfigSha,
