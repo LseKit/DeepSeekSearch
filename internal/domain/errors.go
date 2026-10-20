@@ -227,32 +227,29 @@ func IsRetryable(err error) bool {
 	return ok && info.Retryable
 }
 
+// statusCodeMap 是 2xxx 的固定映射。用查表替代 11 分支 switch，
+// 把 codeForStatus 的圈复杂度压到 F-S3 的 10 以内。
+var statusCodeMap = map[int]int{
+	400: CodeUpValidation,
+	401: CodeUpAuth,
+	402: CodeUpBalance,
+	403: CodeUpForbidden,
+	404: CodeUpNotFound,
+	408: CodeUpTimeout,
+	413: CodeUpTooLarge,
+	429: CodeUpRateLimited,
+	503: CodeUpUnavailable,
+	504: CodeUpGatewayTimeout,
+}
+
 // codeForStatus 是 2xxx 的唯一入口。
 // 未枚举的 5xx 一律归 2500（可重试）；1xx/3xx 与未枚举的 4xx 归 2000（不可重试）。
 func codeForStatus(status int) int {
-	switch status {
-	case 0:
+	if status == 0 {
 		return CodeUpNetwork
-	case 400:
-		return CodeUpValidation
-	case 401:
-		return CodeUpAuth
-	case 402:
-		return CodeUpBalance
-	case 403:
-		return CodeUpForbidden
-	case 404:
-		return CodeUpNotFound
-	case 408:
-		return CodeUpTimeout
-	case 413:
-		return CodeUpTooLarge
-	case 429:
-		return CodeUpRateLimited
-	case 503:
-		return CodeUpUnavailable
-	case 504:
-		return CodeUpGatewayTimeout
+	}
+	if code, ok := statusCodeMap[status]; ok {
+		return code
 	}
 	if status >= 500 && status <= 599 {
 		return CodeUpServer

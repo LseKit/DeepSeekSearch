@@ -200,6 +200,41 @@ func TestIsRetryable(t *testing.T) {
 	}
 }
 
+func TestCodeForStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		status int
+		want   int
+	}{
+		{0, CodeUpNetwork},
+		{400, CodeUpValidation},
+		{401, CodeUpAuth},
+		{402, CodeUpBalance},
+		{403, CodeUpForbidden},
+		{404, CodeUpNotFound},
+		{408, CodeUpTimeout},
+		{413, CodeUpTooLarge},
+		{429, CodeUpRateLimited},
+		{500, CodeUpServer},
+		{502, CodeUpServer},
+		{503, CodeUpUnavailable},
+		{504, CodeUpGatewayTimeout},
+		{599, CodeUpServer},
+		{100, CodeUpUnexpected},
+		{302, CodeUpUnexpected},
+		{418, CodeUpUnexpected},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprint(tt.status), func(t *testing.T) {
+			t.Parallel()
+			if got := codeForStatus(tt.status); got != tt.want {
+				t.Errorf("codeForStatus(%d) = %d, want %d", tt.status, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewUpstreamError(t *testing.T) {
 	t.Parallel()
 
