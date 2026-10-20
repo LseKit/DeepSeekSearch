@@ -153,30 +153,43 @@ func tomlLineIndex(data []byte) map[string]int {
 			continue
 		}
 		if strings.HasPrefix(line, "[") {
-			if end := strings.Index(line, "]"); end >= 0 {
-				section = strings.TrimSpace(line[1:end])
-				if _, seen := lines[section]; !seen {
-					lines[section] = i + 1
-				}
-			}
+			section = recordTomlSection(line, i+1, lines)
 			continue
 		}
-		eq := strings.Index(line, "=")
-		if eq < 0 {
-			continue
-		}
-		key := normalizeKeyPath(strings.TrimSpace(line[:eq]))
-		if key == "" {
-			continue
-		}
-		if section != "" {
-			key = section + "." + key
-		}
-		if _, seen := lines[key]; !seen {
-			lines[key] = i + 1
-		}
+		recordTomlKey(line, section, i+1, lines)
 	}
 	return lines
+}
+
+// recordTomlSection 记录 [section] 行号并返回当前段名；畸形段名返回空串。
+func recordTomlSection(line string, ln int, lines map[string]int) string {
+	end := strings.Index(line, "]")
+	if end < 0 {
+		return ""
+	}
+	section := strings.TrimSpace(line[1:end])
+	if _, seen := lines[section]; !seen {
+		lines[section] = ln
+	}
+	return section
+}
+
+// recordTomlKey 记录 key = value 的行号；section 非空时补全为 section.key。
+func recordTomlKey(line, section string, ln int, lines map[string]int) {
+	eq := strings.Index(line, "=")
+	if eq < 0 {
+		return
+	}
+	key := normalizeKeyPath(strings.TrimSpace(line[:eq]))
+	if key == "" {
+		return
+	}
+	if section != "" {
+		key = section + "." + key
+	}
+	if _, seen := lines[key]; !seen {
+		lines[key] = ln
+	}
 }
 
 // stripTomlComment 只切引号外的 #，避免把值里的 # 当成注释。

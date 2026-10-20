@@ -351,6 +351,8 @@ func TestBuildQuery(t *testing.T) {
 
 **MUST NOT** 用删注释、压行、加 `//nolint` 过关。撞线就拆 —— 拆不动才申请豁免，且要说清「为什么不拆」。
 
+**存量违规**以 `Scripts/size-baseline.json` 冻结（ADR-017），只减不增；新增代码 MUST 从第一天起达标。
+
 ---
 
 ## 8. 禁止清单（review 逐条对照）
