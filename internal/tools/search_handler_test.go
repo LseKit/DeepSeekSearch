@@ -53,9 +53,11 @@ func (c *handlerClock) Sleep(d time.Duration)                  { <-time.After(d)
 func (c *handlerClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 type fakeClient struct {
-	mu       sync.Mutex
-	calls    int
-	searchFn func(context.Context, domain.SearchRequest) (domain.SearchResponse, error)
+	mu         sync.Mutex
+	calls      int
+	fetchCalls int
+	searchFn   func(context.Context, domain.SearchRequest) (domain.SearchResponse, error)
+	fetchFn    func(context.Context, domain.FetchRequest) (domain.FetchResponse, error)
 }
 
 func (f *fakeClient) Search(ctx context.Context, req domain.SearchRequest) (domain.SearchResponse, error) { //nolint:gocritic // 实现 deepseek.Client 固定签名
@@ -69,8 +71,15 @@ func (f *fakeClient) Search(ctx context.Context, req domain.SearchRequest) (doma
 	return fn(ctx, req)
 }
 
-func (f *fakeClient) Fetch(context.Context, domain.FetchRequest) (domain.FetchResponse, error) {
-	return domain.FetchResponse{}, errors.New("fetch not implemented in fake")
+func (f *fakeClient) Fetch(ctx context.Context, req domain.FetchRequest) (domain.FetchResponse, error) {
+	f.mu.Lock()
+	f.fetchCalls++
+	fn := f.fetchFn
+	f.mu.Unlock()
+	if fn == nil {
+		return domain.FetchResponse{}, errors.New("fetch not implemented in fake")
+	}
+	return fn(ctx, req)
 }
 
 func (f *fakeClient) Ping(context.Context) error { return errors.New("ping not implemented in fake") }
@@ -79,6 +88,12 @@ func (f *fakeClient) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+func (f *fakeClient) fetchCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.fetchCalls
 }
 
 type fakeLimiter struct {

@@ -11,8 +11,6 @@ import (
 	"encoding/json"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
 const fetchDescription = `抓取网页并返回 Markdown 正文。大文档不会一次塞满上下文：
@@ -60,7 +58,7 @@ func (t *fetchTool) Name() string { return "ds_fetch" }
 // Register 把 ds_fetch 的 schema、annotations 与 handler 注册到 server。
 func (t *fetchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
 	srv.AddTool(fetchToolDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return handleFetchNotImplemented(ctx, &deps, req), nil
+		return handleFetch(ctx, &deps, req), nil
 	})
 }
 
@@ -86,9 +84,4 @@ type fetchInput struct {
 	Sections []string `json:"sections"`
 	MaxChars *int     `json:"max_chars"`
 	Unescape *bool    `json:"unescape"`
-}
-
-func handleFetchNotImplemented(_ context.Context, _ *Deps, _ *mcp.CallToolRequest) *mcp.CallToolResult {
-	err := domain.NewLocalError(domain.CodeLocInternal, "ds_fetch handler 尚未实装", nil)
-	return errorResult(err, "ds_fetch")
 }
