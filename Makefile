@@ -11,7 +11,7 @@ LDFLAGS := -s -w \
            -X main.commit=$(COMMIT) \
            -X main.buildTime=$(BUILD_TIME)
 
-.PHONY: build test test-race test-integration lint cover cover-check cover-html clean
+.PHONY: build test test-race test-integration lint cover cover-check cover-html clean release dist
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' \
@@ -52,3 +52,18 @@ cover-check: cover
 clean:
 	rm -f coverage.out coverage.html
 	rm -rf ../Bin
+
+# ---- 发布物 -----------------------------------------------------------------
+# 四平台交叉编译；先清空 Bin，MUST NOT 留旧版本文件（17 号 §七 第 11 项）。
+dist:
+	rm -rf ../Bin
+	mkdir -p ../Bin
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_linux_amd64   ./cmd/deepseeksearch
+	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_linux_arm64   ./cmd/deepseeksearch
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_darwin_arm64  ./cmd/deepseeksearch
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_windows_amd64.exe ./cmd/deepseeksearch
+	cd ../Bin && sha256sum DeepSeekSearch_$(VERSION)_* > SHA256SUMS
+
+# release 只负责产出发布物；tag/推送/签名由 Scripts/Release.sh 执行（17 号 §七）。
+release: dist
+	@echo "发布物已生成到 ../Bin/；随后运行 bash Scripts/Release.sh 完成 21 项检查与打 tag"
