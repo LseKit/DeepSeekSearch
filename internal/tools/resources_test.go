@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -266,4 +267,15 @@ func TestRegisterResources(t *testing.T) {
 	if err := registerResources(srv, deps); err != nil {
 		t.Fatalf("registerResources() = %v", err)
 	}
+}
+
+// healthyDeps 构造健康基线的 Deps；health 拆包后本包仍需同一口径的辅助。
+func healthyDeps(t *testing.T, client *fakeClient) Deps {
+	t.Helper()
+	deps, _ := newTestDeps(t, client, func(d *Deps) {
+		d.Cfg.ApiKey = "sk-test"
+		d.Build = domain.BuildInfo{Version: "v0.1.0", Commit: "abc", BuildTime: "2026-10-21T00:00:00Z", GoVersion: "go1.27"}
+		d.StartedAt = d.Clock.Now().Add(-65 * time.Second)
+	})
+	return deps
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/health"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
@@ -42,6 +43,29 @@ type Tool interface {
 	Name() string
 	// Register 把自己的 schema、annotations 与 handler 注册到 server。
 	Register(srv *mcp.Server, deps Deps)
+}
+
+// healthTool 把 internal/health 的注册函数适配成 tools.Tool。
+// 适配层留在本包：health 不需要知道 tools.Deps，避免反向依赖成环。
+type healthTool struct{}
+
+// Name 返回 MCP 工具名。
+func (t *healthTool) Name() string { return "ds_health" }
+
+// Register 把 ds_health 注册到 server。
+func (t *healthTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
+	health.Register(srv, health.Deps{
+		Cfg:       deps.Cfg,
+		Client:    deps.Client,
+		Limiter:   deps.Limiter,
+		Circuit:   deps.Circuit,
+		Cache:     deps.Cache,
+		Clock:     deps.Clock,
+		StartedAt: deps.StartedAt,
+		Usage:     deps.Usage,
+		Build:     deps.Build,
+		Logger:    deps.Logger,
+	})
 }
 
 // Registry 返回全部待注册工具。

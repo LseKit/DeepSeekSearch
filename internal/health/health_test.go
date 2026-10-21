@@ -4,22 +4,81 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package tools
+package health
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
+
+type fakeClient struct {
+	mu        sync.Mutex
+	pingCalls int
+	pingFn    func(context.Context) error
+}
+
+func (f *fakeClient) Search(context.Context, domain.SearchRequest) (domain.SearchResponse, error) {
+	return domain.SearchResponse{}, nil
+}
+
+func (f *fakeClient) Fetch(context.Context, domain.FetchRequest) (domain.FetchResponse, error) {
+	return domain.FetchResponse{}, nil
+}
+
+func (f *fakeClient) Ping(ctx context.Context) error {
+	f.mu.Lock()
+	f.pingCalls++
+	fn := f.pingFn
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx)
+	}
+	return nil
+}
+
+func (f *fakeClient) pingCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pingCalls
+}
+
+type fakeLimiter struct{}
+
+func (l *fakeLimiter) Wait(context.Context, string) error { return nil }
+func (l *fakeLimiter) Release(string)                     {}
+func (l *fakeLimiter) Depth(string) int                   { return 0 }
+
+type fakeCircuit struct{ state string }
+
+func (c *fakeCircuit) Allow(string) error   { return nil }
+func (c *fakeCircuit) Record(string, error) {}
+func (c *fakeCircuit) State(string) string  { return c.state }
+
+func resultText(t *testing.T, res *mcp.CallToolResult) string {
+	t.Helper()
+	if res == nil || len(res.Content) == 0 {
+		t.Fatal("结果没有 Content")
+	}
+	text, ok := res.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Content[0] 类型 = %T", res.Content[0])
+	}
+	return text.Text
+}
 
 type healthCache struct {
 	writableErr error
@@ -84,12 +143,19 @@ func healthCheckNamed(t *testing.T, out *healthOutput, name string) healthCheck 
 
 func healthyDeps(t *testing.T, client *fakeClient) Deps {
 	t.Helper()
-	deps, _ := newTestDeps(t, client, func(d *Deps) {
-		d.Cfg.ApiKey = "sk-test"
-		d.Build = domain.BuildInfo{Version: "v0.1.0", Commit: "abc", BuildTime: "2026-10-21T00:00:00Z", GoVersion: "go1.27"}
-		d.StartedAt = d.Clock.Now().Add(-65 * time.Second)
-	})
-	return deps
+	cfg := config.Default()
+	cfg.ApiKey = "sk-test"
+	cfg.Cache.Enabled = true
+	clk := resilience.SystemClock()
+	return Deps{
+		Cfg:       cfg,
+		Client:    client,
+		Cache:     &healthCache{entries: 0, bytes: 0},
+		Clock:     clk,
+		StartedAt: clk.Now().Add(-65 * time.Second),
+		Build:     domain.BuildInfo{Version: "v0.1.0", Commit: "abc", BuildTime: "2026-10-21T00:00:00Z", GoVersion: "go1.27"},
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
 }
 
 func TestHealth(t *testing.T) {

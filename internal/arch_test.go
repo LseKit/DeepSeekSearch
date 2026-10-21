@@ -40,9 +40,10 @@ var allowedImports = map[string][]string{
 	"internal/logging":    {"internal/domain", "internal/config"},
 	"internal/deepseek":   {"internal/domain", "internal/config"},
 	"internal/resilience": {"internal/domain", "internal/config"},
-	"internal/tools":      {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema"},
+	"internal/health":     {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience"},
+	"internal/tools":      {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health"},
 	"internal/transport":  {"internal/domain", "internal/config", "internal/logging"},
-	"cmd/deepseeksearch":  {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/tools", "internal/toolschema", "internal/transport"},
+	"cmd/deepseeksearch":  {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/tools", "internal/toolschema", "internal/health", "internal/transport"},
 }
 
 // allowedExternal 是包级的**标准库 + 第三方**白名单（与 Contract 10 §2.1~2.8、22 号 §2.1 同源）。
@@ -81,6 +82,10 @@ var allowedExternal = map[string][]string{
 		"github.com/modelcontextprotocol/go-sdk/mcp",
 	},
 	"internal/toolschema": {}, // 纯数据包，无 import
+	"internal/health": {
+		"context", "crypto/sha256", "encoding/hex", "encoding/json", "fmt", "log/slog", "time",
+		"github.com/modelcontextprotocol/go-sdk/mcp",
+	},
 	"internal/transport": {
 		"context", "net/http", "os", "fmt", "errors", "time", "log/slog", "crypto/subtle",
 		"encoding/json", "net", "strings", "io", "runtime/debug", "strconv",

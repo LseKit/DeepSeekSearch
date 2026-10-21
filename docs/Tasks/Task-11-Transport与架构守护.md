@@ -398,7 +398,7 @@ $ echo "共 26 个断言（P1~P26 全覆盖），全部 PASS"
 | 6 | 🔴 MUST NOT 只查项目内 import 就宣称「白名单已强制」—— 那样 `deepseek import mcp` 这种最核心的禁令检不出（§3 第 4 条） |
 | 7 | MUST NOT 在本文件里单独增删白名单条目。改白名单 MUST 走 22 号 §六 的流程（ADR → 10 号 → 22 号 → 本文件），三处不一致 `CheckDocDrift.sh` 会红 |
 | 8 | MUST NOT 为了让 F-S2/F-S4 通过而把 `_test.go` 纳入或排除的口径改来改去（口径见 §3 第 17 条） |
-| 9 | 🔴 `arch_test.go` 里的工具名比较用 `strings.Join` 而不是 `cmp.Diff`。**理由不是「go-cmp 是第 5 个依赖」**—— 它是**仅测试**依赖，在 `_test.go` 里用完全合法（`10-包依赖矩阵` §2.9.1：运行时 4 个 + 仅测试 1 个，AR-1 的第 1 步就跳过 `_test.go`，根本管不到它）。真正的理由是：want 只有 3 个短字符串，`cmp.Diff` 的结构化 diff 带不来任何信息，却会让人误以为「守护依赖数的文件自己依赖 go-cmp」。<br>⚠️ **MUST NOT 把这条推广成「全项目禁用 go-cmp」** —— `21-测试规范` §二 与 `19-AGENTS.md全文` T8 都允许在测试里用它做深比较（配置结构体、错误 payload 这类），手写 `reflect.DeepEqual` + 自拼 diff 会丢掉它的全部价值。禁止的是 **testify**，不是 go-cmp |
+| 9 | 🔴 `arch_test.go` 里的工具名比较用 `strings.Join` 而不是 `cmp.Diff`。**理由不是「go-cmp 是第 5 个依赖」**—— 它是**仅测试**依赖，在 `_test.go` 里用完全合法（`10-包依赖矩阵` §2.10.1：运行时 4 个 + 仅测试 1 个，AR-1 的第 1 步就跳过 `_test.go`，根本管不到它）。真正的理由是：want 只有 3 个短字符串，`cmp.Diff` 的结构化 diff 带不来任何信息，却会让人误以为「守护依赖数的文件自己依赖 go-cmp」。<br>⚠️ **MUST NOT 把这条推广成「全项目禁用 go-cmp」** —— `21-测试规范` §二 与 `19-AGENTS.md全文` T8 都允许在测试里用它做深比较（配置结构体、错误 payload 这类），手写 `reflect.DeepEqual` + 自拼 diff 会丢掉它的全部价值。禁止的是 **testify**，不是 go-cmp |
 
 ### 5 参考骨架（🔴 完整可运行实现，MUST 按此落地，语义不得偏离）
 

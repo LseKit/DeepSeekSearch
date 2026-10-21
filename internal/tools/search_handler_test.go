@@ -108,12 +108,6 @@ func (f *fakeClient) fetchCount() int {
 	return f.fetchCalls
 }
 
-func (f *fakeClient) pingCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.pingCalls
-}
-
 type fakeLimiter struct {
 	mu       sync.Mutex
 	waits    int

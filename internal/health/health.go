@@ -4,7 +4,7 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package tools
+package health
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
+	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
@@ -37,13 +38,28 @@ const healthInputSchemaJSON = `{
   }
 }`
 
-type healthTool struct{}
+// Deps 是 ds_health 需要的外部依赖（tools.Deps 的子集）。
+// 独立定义是为了让本包不依赖 tools —— 否则拆包只会把循环依赖换个位置。
+type Deps struct {
+	Cfg       config.Config
+	Client    deepseek.Client
+	Limiter   resilience.Limiter
+	Circuit   resilience.Circuit
+	Cache     resilience.Cache
+	Clock     resilience.Clock
+	StartedAt time.Time
+	Usage     UsageRecorder
+	Build     domain.BuildInfo
+	Logger    *slog.Logger
+}
 
-// Name 返回 MCP 工具名。
-func (t *healthTool) Name() string { return "ds_health" }
+// UsageRecorder 记录一次工具调用的用量；*tools.UsageTracker 实现本接口。
+type UsageRecorder interface {
+	Record(tool string, billed, cacheHit bool, err error)
+}
 
 // Register 把 ds_health 的 schema、annotations 与 handler 注册到 server。
-func (t *healthTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
+func Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 与 tools.Tool 的按值签名保持一致
 	srv.AddTool(healthToolDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return handleHealth(ctx, &deps, req), nil
 	})
@@ -108,7 +124,7 @@ func handleHealth(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mc
 		deps.Clock = resilience.SystemClock()
 	}
 	h := &healthHandler{deps: deps, started: deps.Clock.Now()}
-	h.logger = deps.Logger.With("call_id", newCallID(), "tool", "ds_health")
+	h.logger = deps.Logger.With("call_id", domain.NewCallID(), "tool", "ds_health")
 	h.logger.Info("call.begin")
 
 	in, err := parseHealthRequest(req)
@@ -383,4 +399,27 @@ func parseHealthRequest(req *mcp.CallToolRequest) (*healthInput, error) {
 		}
 	}
 	return &in, nil
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+// invalid 构造 1000 兜底校验错误；本包不依赖 tools 的校验包装。
+func invalid(field, detail string) error {
+	return fmt.Errorf("invalid %s: %w", field,
+		domain.NewValidationError(domain.CodeValInvalidParam, field, detail))
+}
+
+const fallbackInternalPayload = `{"code":3099,"name":"LOC_INTERNAL","message":"内部错误，属于本工具自身缺陷","hint":"带上 call_id 与复现步骤提交 issue；不要原样重试。","retryable":false}`
+
+// errorResult 把任意错误渲染成 MCP 工具错误结果（与 tools.errorResult 同构）。
+func errorResult(err error, tool string) *mcp.CallToolResult {
+	raw, marshalErr := json.Marshal(domain.ToPayload(err, tool))
+	text := fallbackInternalPayload
+	if marshalErr == nil {
+		text = string(raw)
+	}
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
+	}
 }

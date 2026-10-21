@@ -8,7 +8,6 @@ package tools
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -46,7 +45,7 @@ func handleSearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mc
 		deps.Clock = resilience.SystemClock()
 	}
 	h := &searchHandler{deps: deps, started: deps.Clock.Now()}
-	h.logger = deps.Logger.With("call_id", newCallID(), "tool", searchToolName)
+	h.logger = deps.Logger.With("call_id", domain.NewCallID(), "tool", searchToolName)
 	h.logger.Info("call.begin")
 	ctx = h.withExchangeHook(ctx)
 
@@ -359,14 +358,6 @@ func (h *searchHandler) withExchangeHook(ctx context.Context) context.Context {
 		h.reqBody = domain.ClipBytes(req, limitBytes)
 		h.respBody = domain.ClipBytes(resp, limitBytes)
 	})
-}
-
-func newCallID() string {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "0000000000000000"
-	}
-	return hex.EncodeToString(b[:])
 }
 
 func parseSearchRequest(req *mcp.CallToolRequest) (*searchInput, error) {

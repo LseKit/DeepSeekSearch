@@ -46,7 +46,7 @@ func handleFetch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp
 		deps.Clock = resilience.SystemClock()
 	}
 	h := &fetchHandler{deps: deps, started: deps.Clock.Now()}
-	h.logger = deps.Logger.With("call_id", newCallID(), "tool", fetchToolName)
+	h.logger = deps.Logger.With("call_id", domain.NewCallID(), "tool", fetchToolName)
 	ctx = h.withExchangeHook(ctx)
 
 	in, parseErr := parseFetchRequest(req)

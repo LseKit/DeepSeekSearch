@@ -8,6 +8,8 @@ package tools
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
@@ -369,4 +372,15 @@ func usageJSON(_ context.Context, deps *Deps) ([]byte, error) {
 		return nil, fmt.Errorf("marshal usage: %w", err)
 	}
 	return raw, nil
+}
+
+// configFingerprint 返回脱敏配置的 sha256 前 12 位；与 health 包内的同名实现
+// 必须给出相同结果（同一份 Redacted() 输入），两处都改才不漂移。
+func configFingerprint(cfg *config.Config) string {
+	raw, err := json.Marshal(cfg.Redacted())
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])[:12]
 }

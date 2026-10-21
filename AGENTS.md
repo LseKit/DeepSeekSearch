@@ -117,6 +117,7 @@ GitHubSrc/
 ├── internal/config/        toml + dotenv + env 合并，校验
 ├── internal/logging/       slog + 自研日轮转
 ├── internal/deepseek/      上游 HTTP 客户端（一次往返 + 解析，不重试不缓存）
+├── internal/health/        ds_health 诊断工具（只读依赖，独立成包守住行数上限）
 ├── internal/resilience/    限流 / 重试 / 预算 / 熔断 / 缓存 / singleflight
 ├── internal/tools/         MCP 工具：校验 + 编排 + 渲染
 ├── internal/transport/     stdio + Streamable HTTP + 中间件链
@@ -299,7 +300,7 @@ package domain
 | T5 | 每个 `exported` 函数 MUST 有 ≥1 个 `Test<函数名>` |
 | T6 | ≥3 个用例 MUST 用表驱动 + `t.Run` |
 | T7 | 无共享状态的 L1 MUST 加 `t.Parallel()` |
-| T8 | 断言用标准库 + `github.com/google/go-cmp/cmp`（🔴 **仅测试**依赖，只能出现在 `_test.go`；「4 个第三方」是运行时口径，见 `Contract/10-包依赖矩阵.md` §2.9.1）。**MUST NOT 引入 testify** |
+| T8 | 断言用标准库 + `github.com/google/go-cmp/cmp`（🔴 **仅测试**依赖，只能出现在 `_test.go`；「4 个第三方」是运行时口径，见 `Contract/10-包依赖矩阵.md` §2.10.1）。**MUST NOT 引入 testify** |
 | T9 | 黄金文件 MUST 由真实抓取得到，**MUST NOT 手写假 JSON** |
 | T10 | 断言 MUST 检查返回值内容，不能只有 `if err != nil { t.Fatal }` |
 
