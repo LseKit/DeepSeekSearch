@@ -46,7 +46,7 @@ python3 Scripts/CheckConsistency.py ; echo "consistency EXIT=$?"
 ├── GitHubSrc/                ← 唯一推到 GitHub 的部分，里面全部小写
 │   ├── cmd/deepseeksearch/
 │   ├── internal/{domain,config,deepseek,resilience,tools,logging,transport}/
-│   ├── testdata/
+│   │   └── <pkg>/testdata/   ← 夹具在包内，仓库根没有 testdata/
 │   ├── docs/                 ← 由 Doc/ 单向同步，MUST NOT 手写
 │   ├── Scripts/
 │   └── go.mod go.sum Makefile .golangci.yml LICENSE README.md CHANGELOG.md
@@ -60,7 +60,7 @@ python3 Scripts/CheckConsistency.py ; echo "consistency EXIT=$?"
 | 事实 | 规定 |
 |---|---|
 | 仓库根 | **`/mcp/DeepSeekSearch/GitHubSrc/`**（`.git` 就在这一层） |
-| 谁在仓库里 | 只有源码与发布物：`cmd/ internal/ testdata/ docs/ Scripts/` + 根级 A/B 级文件 |
+| 谁在仓库里 | 只有源码与发布物：`cmd/ internal/`（夹具在包内 `internal/*/testdata/`）、`docs/`、`Scripts/` + 根级 A/B 级文件 |
 | 谁不在仓库里 | `Doc/`、部署根的 `Scripts/`、`Bin/ Config/ Data/ Logs/` |
 | 提交命令 | 所有 `git` 操作 MUST 在 `GitHubSrc/` 内执行 |
 
@@ -263,7 +263,7 @@ MUST NOT 跳序。想并行会撞 import 循环与接口不一致。
 | 4 | 代码块里的 `\n` 变成真换行 | 反转义时删了所有反斜杠 | 只反转义实测全集 **32** 个字符（原 11 字符表漏了 21 种，ADR-013），见 `Contract/12-数据契约.md` §6.2 |
 | 5 | 改配置不生效 | 优先级顺序写反 / `toml` tag 拼错 | `Config.Source(key)` 打印来源 |
 | 6 | 5 个并发请求花了 5 次钱 | 没做 singleflight | Task-07 A-02，这是必需不是优化 |
-| 7 | 反代后全部 403 | SDK 的 Host 校验 | `allow_non_local_host=true` **且** `auth_enabled=true` |
+| 7 | 反代 / 直连局域网后全部 403 | 两层各查各的：本项目 `hostGuard` 查 **Host 头**（`3093`）；SDK 的 DNS 重绑定防护查「**本连接本地地址是回环** + Host 非回环」 | 反代或 `host="0.0.0.0"`：`allow_non_local_host=true` **且** `auth_enabled=true`；反代到回环监听且转发原始 Host：再加 `disable_localhost_protection=true` |
 | 8 | `golangci-lint` 一次性报几百个 issue | 用 v1 配置格式跑了 v2 | 用 `20-编码规范` §1.1 的 v2 配置 |
 
 ---

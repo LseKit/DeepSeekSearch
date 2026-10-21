@@ -122,9 +122,10 @@ GitHubSrc/
 ├── internal/transport/     stdio + Streamable HTTP + 中间件链
 ├── internal/arch_test.go   架构守护测试
 ├── Scripts/                CheckSize / CheckDocDrift / SyncDocs / Release
-├── testdata/               契约黄金文件
 └── docs/                   从 ../Doc 单向同步，MUST NOT 手写
 ```
+
+> 测试夹具在**包内** `internal/<pkg>/testdata/`，仓库根**没有** `testdata/`：`config` 8 份 `.toml`、`deepseek` 2 组 `.json` + 同名 `.meta`、`tools` 的 `search_input_schema.json`。清单与更新规则见 `docs/Engineering/21-测试规范.md` §五。
 
 ### 4.1 改哪里（决策表）
 
@@ -280,7 +281,7 @@ package domain
 | 层 | 位置 | 依赖 | 触发 |
 |---|---|---|---|
 | **L1 单元** | `*_test.go` | 零外部依赖（无网络、无落盘） | `make test` |
-| **L2 契约黄金** | `*_test.go` + `testdata/*.golden` | 固定输入输出文件 | `make test` |
+| **L2 契约黄金** | `*_test.go` + 包内 `testdata/`（`.json` + 同名 `.meta`、`.toml`） | 固定输入输出文件 | `make test` |
 | **L3a 协议/端到端** | `*_test.go`（进程内起 server + `httptest` 假上游 + stdio 管道），**MUST NOT 打 build tag** | 本地假上游，**无 API Key、零计费** | `make test` |
 | **L3b 真实上游集成** | `*_integration_test.go`，**首行 MUST 打** `//go:build integration` | 真实上游 + 真 Key（**计费**） | `make test-integration` |
 
@@ -524,7 +525,7 @@ git status --short         # 确认没多出文件
 | 中文末尾出现 `�` | 按 byte 切片 | `domain.SliceByRune` |
 | 代码块里的 `\n` 变真换行 | 反转义时删了所有反斜杠 | 只反转义实测全集 **32** 个字符（原 11 字符表漏了 21 种，ADR-013）；且 MUST 单趟替换，多趟会把嵌套转义 `\\\.` 过度还原 |
 | 改配置不生效 | 优先级顺序反了 / `toml` tag 拼错 | `Config.Source(key)` 打印来源 |
-| 反代后全部 403 | SDK 的 Host 校验 | `allow_non_local_host=true` **且** `auth_enabled=true` |
+| 反代 / 直连局域网后全部 403 | 两层各查各的：`hostGuard` 查 **Host 头**（`3093`）；SDK 的 DNS 重绑定防护查「**本连接本地地址是回环** + Host 非回环」 | 反代或 `host="0.0.0.0"`：`allow_non_local_host=true` **且** `auth_enabled=true`；反代到回环监听且转发原始 Host：再加 `disable_localhost_protection=true` |
 
 ---
 

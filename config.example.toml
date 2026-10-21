@@ -88,11 +88,11 @@ allowed_origins = []
 
 # 允许非本机 Host 头。
 #   false（默认）—— 只接受 Host 是回环地址的请求，其它一律 403。
-#   true          —— 放行任意 Host。⚠️ 只有一种情况该开：前面挂了 nginx/Caddy 等
-#                    反向代理，且代理转发的是原始 Host（不是 127.0.0.1）。
-# 为什么需要这个开关：MCP SDK 内置的 DNS 重绑定防护靠 Host 头判断，
-# 而反代转发原始 Host 时必然被判成「非本机」→ 全部 403。
-# 反代场景的完整要求：本项 true + auth_enabled true，两者必须同时开。
+#   true          —— 放行任意 Host。⚠️ 两种场景该开：前面挂了 nginx/Caddy 等
+#                    反向代理且转发原始 Host；或 host = "0.0.0.0" 直连局域网
+#                    （客户端的 Host 头是本机 IP，不开这个一律 403/3093）。
+# 为什么需要这个开关：hostGuard 只看 Host 头，不看监听地址。
+# 完整要求：本项 true + auth_enabled true，两者必须同时开。
 allow_non_local_host = false
 
 # 健康检查端点路径。客户端不需要它，是给 systemd / nginx / 监控用的。
