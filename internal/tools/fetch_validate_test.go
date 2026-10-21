@@ -17,6 +17,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
+	rescache "github.com/LseKit/DeepSeekSearch/internal/resilience/cache"
 )
 
 func fetchConfig() *config.Config {
@@ -119,7 +120,7 @@ func TestFetchValidate(t *testing.T) {
 
 	t.Run("cache_id不存在返回3080", func(t *testing.T) {
 		t.Parallel()
-		cache, err := resilience.NewSqliteCache(resilience.Config{CacheDbPath: ":memory:"})
+		cache, err := rescache.NewSqliteCache(resilience.Config{CacheDbPath: ":memory:"})
 		if err != nil {
 			t.Fatalf("NewSqliteCache() = %v", err)
 		}

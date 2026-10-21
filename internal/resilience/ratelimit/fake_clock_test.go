@@ -4,7 +4,7 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package ratelimit
 
 import (
 	"sync"

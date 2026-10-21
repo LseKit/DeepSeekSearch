@@ -21,6 +21,8 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/circuit"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/ratelimit"
 )
 
 const healthDescription = `本地诊断工具。默认零网络、零计费；只有 probe_upstream=true 时用 GET 探活（405，不计费）。
@@ -265,7 +267,7 @@ func (h *healthHandler) checkClock() healthCheck {
 }
 
 type limiterDiagnoser interface {
-	Diagnostics(string) resilience.LimiterDiagnostics
+	Diagnostics(string) ratelimit.LimiterDiagnostics
 }
 
 func (h *healthHandler) checkLimiter() healthCheck {
@@ -296,7 +298,7 @@ func (h *healthHandler) checkLimiter() healthCheck {
 }
 
 type circuitDiagnoser interface {
-	Diagnostics(string) resilience.CircuitDiagnostics
+	Diagnostics(string) circuit.Diagnostics
 }
 
 func (h *healthHandler) checkCircuit() healthCheck {

@@ -119,7 +119,7 @@ make check
 
 ```bash
 go test ./internal/domain/ -run TestNormalizeUrl -v   # 单个测试
-go test ./internal/resilience/ -race -cover           # 单包 + 覆盖率
+go test ./internal/resilience/... -race -cover        # 接口根 + 五个子包
 go test ./... -count=1                                # 全量（禁缓存）
 ```
 
@@ -140,7 +140,12 @@ GitHubSrc/
 ├── internal/logging/       slog + 自研日轮转
 ├── internal/deepseek/      上游 HTTP 客户端（一次往返 + 解析，不重试不缓存）
 ├── internal/health/        ds_health 诊断工具（只读依赖，独立成包守住行数上限）
-├── internal/resilience/    限流 / 重试 / 预算 / 熔断 / 缓存 / singleflight
+├── internal/resilience/    接口根：Clock / Config / 五类能力接口 / Reason
+│   ├── ratelimit/          限流实现（令牌桶 + 在飞配额）
+│   ├── retry/              重试实现（退避 + 预算）
+│   ├── budget/             预算实现（字符 / 窗口 / 日累计）
+│   ├── circuit/            熔断实现
+│   └── cache/              SQLite 缓存 + 进程内/跨进程 singleflight
 ├── internal/tools/         MCP 工具：校验 + 编排 + 渲染
 ├── internal/transport/     stdio + Streamable HTTP + 中间件链
 ├── internal/toolschema/    工具 JSON Schema 字面量（纯数据叶子包，零依赖）
@@ -171,7 +176,8 @@ GitHubSrc/
 cmd → transport, tools, resilience, deepseek, config, logging
 tools → domain, config, deepseek, resilience
 transport → domain, config, logging
-resilience → domain, config
+resilience → （接口根，无内部依赖）
+resilience/{ratelimit,retry,budget,circuit,cache} → domain, resilience
 deepseek → domain, config
 logging → domain, config
 config → domain
@@ -332,7 +338,7 @@ package domain
 
 | 包 | 门槛 |
 |---|:-:|
-| `internal/domain` `internal/config` `internal/resilience` | **≥ 80%** |
+| `internal/domain` `internal/config` `internal/resilience`（根）与 `resilience/{ratelimit,retry,budget,circuit,cache}` | **≥ 80%** |
 | `internal/deepseek` `internal/tools` | ≥ 70% |
 | `internal/transport` | ≥ 60% |
 | 项目整体 | **≥ 65%**（低于此禁止发版） |
@@ -378,7 +384,7 @@ func TestBuildQuery(t *testing.T) {
 
 **MUST NOT** 用删注释、压行、加 `//nolint` 过关。撞线就拆 —— 拆不动才申请豁免，且要说清「为什么不拆」。
 
-**存量违规**以 `Scripts/size-baseline.json` 冻结（ADR-017），只减不增；新增代码 MUST 从第一天起达标。
+**存量违规已清零**（`DEBT-010`，2026-10-21）：`Scripts/size-baseline.json` 已删除，所有代码 MUST 直接达标；MUST NOT 重新引入基线文件或往任何豁免里塞批量存量。
 
 ---
 

@@ -26,10 +26,20 @@ func main() {
 	if len(os.Args) > 1 {
 		root = os.Args[1]
 	}
-	dirs, err := filepath.Glob(filepath.Join(root, "internal", "*"))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	// 包可以嵌套一层（如 internal/resilience/cache）；MUST 逐目录独立计数，
+	// 不能把子目录的文件递归算进父包。
+	patterns := []string{
+		filepath.Join(root, "internal", "*"),
+		filepath.Join(root, "internal", "*", "*"),
+	}
+	var dirs []string
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		dirs = append(dirs, matches...)
 	}
 	sort.Strings(dirs)
 	for _, dir := range dirs {
@@ -41,6 +51,9 @@ func main() {
 		if countErr != nil {
 			fmt.Fprintln(os.Stderr, countErr)
 			os.Exit(1)
+		}
+		if files == 0 {
+			continue
 		}
 		rel, relErr := filepath.Rel(root, dir)
 		if relErr != nil {
@@ -58,7 +71,13 @@ func countPackage(dir string) (files, lines, exports int, err error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		if d.IsDir() {
+			if path != dir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 		files++

@@ -11,7 +11,6 @@ package internal_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -34,18 +33,23 @@ const modulePath = "github.com/LseKit/DeepSeekSearch"
 
 // allowedImports 是包级的**项目内** import 白名单（与 Contract 10 §二、22 号 §2.1 三处同源）。
 var allowedImports = map[string][]string{
-	"internal/domain":       {}, // 零依赖
-	"internal/toolschema":   {}, // 纯数据：MCP 工具 JSON Schema 字面量，零依赖
-	"internal/config":       {"internal/domain"},
-	"internal/logging":      {"internal/domain", "internal/config"},
-	"internal/deepseek":     {"internal/domain", "internal/config"},
-	"internal/resilience":   {"internal/domain", "internal/config"},
-	"internal/health":       {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience"},
-	"internal/mcputil":      {"internal/domain"},
-	"internal/toolvalidate": {"internal/domain"},
-	"internal/tools":        {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate"},
-	"internal/transport":    {"internal/domain", "internal/config", "internal/logging"},
-	"cmd/deepseeksearch":    {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/tools", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate", "internal/transport"},
+	"internal/domain":               {}, // 零依赖
+	"internal/toolschema":           {}, // 纯数据：MCP 工具 JSON Schema 字面量，零依赖
+	"internal/config":               {"internal/domain"},
+	"internal/logging":              {"internal/domain", "internal/config"},
+	"internal/deepseek":             {"internal/domain", "internal/config"},
+	"internal/resilience":           {},
+	"internal/resilience/ratelimit": {"internal/domain", "internal/resilience"},
+	"internal/resilience/retry":     {"internal/domain", "internal/resilience"},
+	"internal/resilience/budget":    {"internal/domain", "internal/resilience"},
+	"internal/resilience/circuit":   {"internal/domain", "internal/resilience"},
+	"internal/resilience/cache":     {"internal/domain", "internal/resilience"},
+	"internal/health":               {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/resilience/ratelimit", "internal/resilience/circuit"},
+	"internal/mcputil":              {"internal/domain"},
+	"internal/toolvalidate":         {"internal/domain"},
+	"internal/tools":                {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate"},
+	"internal/transport":            {"internal/domain", "internal/config", "internal/logging"},
+	"cmd/deepseeksearch":            {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/resilience/ratelimit", "internal/resilience/retry", "internal/resilience/budget", "internal/resilience/circuit", "internal/resilience/cache", "internal/tools", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate", "internal/transport"},
 }
 
 // allowedExternal 是包级的**标准库 + 第三方**白名单（与 Contract 10 §2.1~2.8、22 号 §2.1 同源）。
@@ -71,10 +75,24 @@ var allowedExternal = map[string][]string{
 		"net/url", "net", "regexp", "strings", "unicode/utf8", "crypto/tls",
 	},
 	"internal/resilience": {
+		"context", "time",
+	},
+	"internal/resilience/ratelimit": {
+		"context", "fmt", "math", "sync", "sync/atomic", "time",
+	},
+	"internal/resilience/retry": {
+		"math/rand/v2", "sync", "time",
+	},
+	"internal/resilience/budget": {
+		"fmt", "sync", "time",
+	},
+	"internal/resilience/circuit": {
+		"fmt", "sync", "time",
+	},
+	"internal/resilience/cache": {
 		// 没有 golang.org/x/time/rate —— rate.Limiter 无法注入 FakeClock，令牌桶自研
-		"context", "time", "sync", "sync/atomic", "math", "math/rand/v2", "container/list",
-		"errors", "fmt", "hash/fnv", "database/sql", "os", "path/filepath", "strings", "strconv",
-		"crypto/sha256", "encoding/hex", "encoding/json",
+		"context", "crypto/sha256", "database/sql", "encoding/hex", "encoding/json",
+		"errors", "fmt", "os", "path/filepath", "strings", "sync", "sync/atomic", "time",
 		"modernc.org/sqlite",
 	},
 	"internal/tools": {
@@ -343,41 +361,6 @@ func blockCommentLines(pf prodFile) map[int]bool {
 	return lines
 }
 
-// sizeBaselineEntry 是基线里一个超限项的冻结值。
-type sizeBaselineEntry struct {
-	Value int `json:"value"`
-}
-
-// sizeBaseline 只包含 arch_test 负责的 F-S2 / F-S4；F-S1/F-S3/F-S5 由 CheckSize.sh 读取同一份文件。
-type sizeBaseline struct {
-	FS2 map[string]sizeBaselineEntry `json:"f_s2_function_lines"`
-	FS4 map[string]sizeBaselineEntry `json:"f_s4_nesting"`
-}
-
-// loadSizeBaseline 读取 Scripts/size-baseline.json（ADR-017）。
-// 基线不存在 = DEBT-010 已清零，全部按原阈值判定。
-func loadSizeBaseline(t *testing.T) *sizeBaseline {
-	t.Helper()
-
-	raw, err := os.ReadFile("../Scripts/size-baseline.json")
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &sizeBaseline{}
-		}
-		t.Fatalf("读取规模基线失败: %v", err)
-	}
-	var baseline sizeBaseline
-	if err := json.Unmarshal(raw, &baseline); err != nil {
-		t.Fatalf("解析规模基线失败: %v", err)
-	}
-	return &baseline
-}
-
-// baselineKey 把 ../internal/tools/x.go 归一成 internal/tools/x.go:<函数名>。
-func baselineKey(path, fn string) string {
-	return strings.TrimPrefix(filepath.ToSlash(path), "../") + ":" + fn
-}
-
 // TestFunctionLength 强制 F-S2：单函数 ≤50 行（不含注释与空行）。
 func TestFunctionLength(t *testing.T) {
 	const limit = 50
@@ -385,7 +368,6 @@ func TestFunctionLength(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("没有解析到任何生产文件")
 	}
-	baseline := loadSizeBaseline(t)
 	for _, pf := range files {
 		blocks := blockCommentLines(pf)
 		ast.Inspect(pf.file, func(n ast.Node) bool {
@@ -404,11 +386,6 @@ func TestFunctionLength(t *testing.T) {
 				count++
 			}
 			if count <= limit {
-				return true
-			}
-			key := baselineKey(pf.path, fd.Name.Name)
-			if entry, frozen := baseline.FS2[key]; frozen && count <= entry.Value {
-				t.Logf("F-S2 冻结: %s 有 %d 行（基线 %d）", key, count, entry.Value)
 				return true
 			}
 			t.Errorf("F-S2 违规: %s 的 %s 有 %d 行非注释代码（上限 %d）",
@@ -444,7 +421,6 @@ func nestingOf(n ast.Node, depth int) int {
 // TestNestingDepth 强制 F-S4：嵌套 ≤3 层。
 func TestNestingDepth(t *testing.T) {
 	const limit = 3
-	baseline := loadSizeBaseline(t)
 	for _, pf := range parseProdFiles(t, "..") {
 		ast.Inspect(pf.file, func(n ast.Node) bool {
 			fd, ok := n.(*ast.FuncDecl)
@@ -453,11 +429,6 @@ func TestNestingDepth(t *testing.T) {
 			}
 			d := nestingOf(fd.Body, 0)
 			if d <= limit {
-				return false
-			}
-			key := baselineKey(pf.path, fd.Name.Name)
-			if entry, frozen := baseline.FS4[key]; frozen && d <= entry.Value {
-				t.Logf("F-S4 冻结: %s 嵌套 %d 层（基线 %d）", key, d, entry.Value)
 				return false
 			}
 			t.Errorf("F-S4 违规: %s 的 %s 嵌套 %d 层（上限 %d）",

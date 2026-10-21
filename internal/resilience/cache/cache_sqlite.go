@@ -4,7 +4,7 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package cache
 
 import (
 	"context"
@@ -17,8 +17,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 	_ "modernc.org/sqlite" // 纯 Go SQLite 驱动，无 CGO（ADR-006）
 )
+
+// logger 是缓存层使用的窄日志接口；配置由 resilience.Config.Logger 注入。
+type logger interface {
+	Warn(msg string, args ...any)
+	Info(msg string, args ...any)
+}
 
 const (
 	cacheDegradedThreshold = 3
@@ -52,9 +59,9 @@ const (
 
 type sqliteCache struct {
 	db     *sql.DB
-	cfg    Config
-	clk    Clock
-	logger cacheLogger
+	cfg    resilience.Config
+	clk    resilience.Clock
+	logger logger
 
 	hitsMu sync.Mutex
 	hits   map[string]*hitStat
@@ -76,10 +83,10 @@ type sqliteCache struct {
 //
 // 目录不存在时创建；打开或建表失败返回 error，由调用方决定降级还是拒绝启动。
 // 缓存是「省钱」不是「功能」：运行期的任何 DB 错误只记 degraded，不代表工具失败。
-func NewSqliteCache(cfg Config) (Cache, error) { //nolint:gocritic // 签名由 11 号 §四 固定
+func NewSqliteCache(cfg resilience.Config) (resilience.Cache, error) { //nolint:gocritic // 签名由 11 号 §四 固定
 	withCacheDefaults(&cfg)
 	if cfg.Clock == nil {
-		cfg.Clock = SystemClock()
+		cfg.Clock = resilience.SystemClock()
 	}
 	if err := ensureCacheDir(cfg.CacheDbPath); err != nil {
 		return nil, err
@@ -125,7 +132,7 @@ func joinClose(err error, db *sql.DB) error {
 	return err
 }
 
-func withCacheDefaults(cfg *Config) {
+func withCacheDefaults(cfg *resilience.Config) {
 	if cfg.CacheDbPath == "" {
 		cfg.CacheDbPath = "Data/Cache.db"
 	}
@@ -427,7 +434,7 @@ func (c *sqliteCache) searchTotalTimeoutMs() int { return c.cfg.TotalTimeoutSear
 
 func (c *sqliteCache) fetchTotalTimeoutMs() int { return c.cfg.TotalTimeoutFetchMs }
 
-func (c *sqliteCache) singleflightLogger() cacheLogger { return c.logger }
+func (c *sqliteCache) singleflightLogger() logger { return c.logger }
 
 func (c *sqliteCache) acquireLease(ctx context.Context, key, owner string, expiresAt int64) (bool, error) {
 	if c.closed.Load() {

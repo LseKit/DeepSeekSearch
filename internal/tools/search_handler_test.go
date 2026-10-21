@@ -24,6 +24,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
+	rescache "github.com/LseKit/DeepSeekSearch/internal/resilience/cache"
 )
 
 type syncBuffer struct {
@@ -178,7 +179,7 @@ func newTestDeps(t *testing.T, client *fakeClient, mutate func(*Deps)) (Deps, *s
 	buf := &syncBuffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	cache, err := resilience.NewSqliteCache(resilience.Config{
+	cache, err := rescache.NewSqliteCache(resilience.Config{
 		CacheDbPath:         ":memory:",
 		CacheMaxEntries:     100,
 		CacheMaxBytesMB:     10,
@@ -199,7 +200,7 @@ func newTestDeps(t *testing.T, client *fakeClient, mutate func(*Deps)) (Deps, *s
 		Client:       client,
 		Limiter:      &fakeLimiter{},
 		Cache:        cache,
-		Singleflight: resilience.NewSingleflight(cache, clk),
+		Singleflight: rescache.NewSingleflight(cache, clk),
 		Circuit:      &fakeCircuit{},
 		Clock:        clk,
 		Logger:       logger,

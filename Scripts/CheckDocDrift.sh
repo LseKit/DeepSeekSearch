@@ -148,8 +148,8 @@ done
 # ---------------------------------------------------------------- 检查 4
 say ""
 say "[4/8] 包白名单两处一致（Contract/10 与 Engineering/22）"
-A=$(grep -oP '^### 2\.[0-9.]+ `internal/\K[a-z]+' "$DOC_DIR/Contract/10-包依赖矩阵.md" | sort -u)
-B=$(grep -oP '^\s+"internal/\K[a-z]+(?=")' "$DOC_DIR/Engineering/22-架构守护规则.md" | sort -u)
+A=$(grep -oP '^### 2\.[0-9.]+ `internal/\K[a-z/]+' "$DOC_DIR/Contract/10-包依赖矩阵.md" | sort -u)
+B=$(grep -oP '^\s+"internal/\K[a-z/]+(?=")' "$DOC_DIR/Engineering/22-架构守护规则.md" | sort -u)
 if [ "$A" = "$B" ]; then
     ok "两处包名集合一致: $(echo "$A" | tr '\n' ' ')"
 else
@@ -159,8 +159,8 @@ else
 fi
 NA=$(echo "$A" | grep -c . || true); NB=$(echo "$B" | grep -c . || true)
 NCMD=$(grep -cE '^### 2\.[0-9.]+ `cmd/' "$DOC_DIR/Contract/10-包依赖矩阵.md")
-if [ "$NA" = "$NB" ] && [ "$NA" = 11 ] && [ "$NCMD" = 1 ]; then
-    ok "包数量 = 12（11 个 internal + 1 个 cmd）"
+if [ "$NA" = "$NB" ] && [ "$NA" = 16 ] && [ "$NCMD" = 1 ]; then
+    ok "包数量 = 17（16 个 internal + 1 个 cmd）"
 else
     bad "包数量不一致（10: internal=$NA cmd=$NCMD, 22: internal=$NB）"
 fi
@@ -169,14 +169,14 @@ fi
 # 🔴 只比「包名集合」是不够的（D2/C10）。有人把 allowedImports["internal/tools"] 的值
 #    加上 "internal/transport"（正是 §262 点名的「拆护栏」行为），包名集合完全不变 ⇒ 脚本全绿。
 #    下面把两处都归一成 "包 依赖" 行，做**值级双向 diff**。
-PKGS="domain config logging deepseek health mcputil resilience tools toolschema toolvalidate transport"
+PKGS="domain config logging deepseek health mcputil resilience resilience/budget resilience/cache resilience/circuit resilience/ratelimit resilience/retry tools toolschema toolvalidate transport"
 
 # 4b-1：22 号 allowedImports（Go map 字面量，每项单行）→ "internal/x internal/y"
 MAP22=$(awk '
     /^var allowedImports[[:space:]]*=/ {f=1; next}
     f && /^}/ {f=0}
     f {
-        if (match($0, /"(internal|cmd)\/[a-z]+"/)) {
+        if (match($0, /"(internal|cmd)\/[a-z/]+"/)) {
             key = substr($0, RSTART+1, RLENGTH-2)
             rest = substr($0, RSTART+RLENGTH)
             n = split(rest, a, "\"")
@@ -186,7 +186,7 @@ MAP22=$(awk '
     }' "$DOC_DIR/Engineering/22-架构守护规则.md" | sort -u)
 
 # 4b-2：10 号 §2.x 表格「允许」列 → "internal/x internal/y"
-#        cmd 段写的是「全部 `internal/*`」，展开为 11 条。
+#        cmd 段写的是「全部 `internal/*`」，展开为 16 条。
 MAP10=$(awk -v pkgs="$PKGS" '
     BEGIN { np = split(pkgs, P, " ") }
     /^### 2\.[0-9.]+ `/ {
@@ -227,13 +227,13 @@ fi
 EXT_PKGS=$(awk '
     /^var allowedExternal[[:space:]]*=/ {f=1; next}
     f && /^}/ {f=0}
-    f && match($0, /"(internal|cmd)\/[a-z]+"/) { print substr($0, RSTART+1, RLENGTH-2) }
+    f && match($0, /"(internal|cmd)\/[a-z/]+"/) { print substr($0, RSTART+1, RLENGTH-2) }
 ' "$DOC_DIR/Engineering/22-架构守护规则.md" | sort -u)
 EXT_N=$(echo "$EXT_PKGS" | grep -c . || true)
-if [ "$EXT_N" = 12 ]; then
-    ok "allowedExternal 覆盖全部 12 个包（外部 import 受检）"
+if [ "$EXT_N" = 17 ]; then
+    ok "allowedExternal 覆盖全部 17 个包（外部 import 受检）"
 else
-    bad "allowedExternal 只覆盖 $EXT_N 个包（应 8）: $(echo "$EXT_PKGS"|tr '\n' ' ')"
+    bad "allowedExternal 只覆盖 $EXT_N 个包（应 17）: $(echo "$EXT_PKGS"|tr '\n' ' ')"
 fi
 # 10 号 §2.x 的「标准库」列与 22 号 allowedExternal 的**标准库项**做双向 diff
 STD_OK=0; STD_TRIED=0

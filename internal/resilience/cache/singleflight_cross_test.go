@@ -4,7 +4,7 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package cache
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
 func newFileCaches(t *testing.T, maxEntryKB int) (first, second *sqliteCache) {
@@ -25,7 +26,7 @@ func newFileCaches(t *testing.T, maxEntryKB int) (first, second *sqliteCache) {
 	path := filepath.Join(t.TempDir(), "c.db")
 	open := func(offset time.Duration) *sqliteCache {
 		clk := newFakeClock(time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC).Add(offset))
-		cache, err := NewSqliteCache(Config{
+		cache, err := NewSqliteCache(resilience.Config{
 			CacheDbPath:         path,
 			CacheMaxEntries:     100,
 			CacheMaxBytesMB:     10,

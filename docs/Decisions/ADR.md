@@ -959,7 +959,9 @@ func Unescape(s string) string { return unescapeRe.ReplaceAllString(s, "$1") }
 
 ## ADR-017 规模红线对存量代码采用「基线棘轮」（冻结存量、只减不增）
 
-**状态**：已接受（2026-10-21）
+**状态**：已退出（2026-10-21，`DEBT-010` 清零；保留为历史决策记录）
+
+> **退出说明**：F-S2 / F-S3 / F-S5 存量已全部清理，`Scripts/size-baseline.json` 删除，`CheckSize.sh` 与 `arch_test.go` 不再读取基线。自 2026-10-21 起所有代码直接按原阈值判定。
 
 ### 背景
 

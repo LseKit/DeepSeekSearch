@@ -4,7 +4,7 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package cache
 
 import (
 	"bytes"
@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
 type logRecord struct {
@@ -90,11 +92,11 @@ func (l *recordingLogger) wait(t *testing.T, event string) {
 	}
 }
 
-func newTestCache(t *testing.T, configure func(*Config)) (*sqliteCache, *fakeClock, *recordingLogger) {
+func newTestCache(t *testing.T, configure func(*resilience.Config)) (*sqliteCache, *fakeClock, *recordingLogger) {
 	t.Helper()
 	clk := newFakeClock(time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC))
 	logger := newRecordingLogger()
-	cfg := Config{
+	cfg := resilience.Config{
 		CacheDbPath:         ":memory:",
 		CacheMaxEntries:     100,
 		CacheMaxBytesMB:     1,
@@ -126,7 +128,7 @@ func TestNewSqliteCache(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "Data", "Cache.db")
-	cache, err := NewSqliteCache(Config{
+	cache, err := NewSqliteCache(resilience.Config{
 		CacheDbPath:         path,
 		CacheMaxEntries:     10,
 		CacheMaxBytesMB:     1,
@@ -147,7 +149,7 @@ func TestNewSqliteCache(t *testing.T) {
 		t.Fatalf("缓存文件未创建: %v", statErr)
 	}
 
-	reopened, err := NewSqliteCache(Config{
+	reopened, err := NewSqliteCache(resilience.Config{
 		CacheDbPath:         path,
 		CacheMaxEntries:     10,
 		CacheMaxBytesMB:     1,
@@ -235,7 +237,7 @@ func TestSqliteCache(t *testing.T) {
 
 	t.Run("超单条上限不写入", func(t *testing.T) {
 		t.Parallel()
-		c, _, logger := newTestCache(t, func(cfg *Config) { cfg.CacheMaxEntryKB = 1 })
+		c, _, logger := newTestCache(t, func(cfg *resilience.Config) { cfg.CacheMaxEntryKB = 1 })
 		ctx := context.Background()
 		val := bytes.Repeat([]byte("x"), 1025)
 		if err := c.Put(ctx, "fetch:big", val, time.Hour); err != nil {
@@ -258,7 +260,7 @@ func TestSqliteCache(t *testing.T) {
 
 	t.Run("超maxEntries淘汰最久未访问", func(t *testing.T) {
 		t.Parallel()
-		c, clk, _ := newTestCache(t, func(cfg *Config) { cfg.CacheMaxEntries = 2 })
+		c, clk, _ := newTestCache(t, func(cfg *resilience.Config) { cfg.CacheMaxEntries = 2 })
 		ctx := context.Background()
 		mustPut(t, c, "fetch:a", "a")
 		clk.Advance(time.Second)
@@ -433,7 +435,7 @@ func TestCacheDegradedRecovery(t *testing.T) {
 func TestCachePruneScheduler(t *testing.T) {
 	t.Parallel()
 
-	c, clk, logger := newTestCache(t, func(cfg *Config) { cfg.CachePruneIntervalS = 1 })
+	c, clk, logger := newTestCache(t, func(cfg *resilience.Config) { cfg.CachePruneIntervalS = 1 })
 	ctx := context.Background()
 	if err := c.Put(ctx, "fetch:expire", []byte("v"), time.Second); err != nil {
 		t.Fatalf("Put() = %v", err)
@@ -460,12 +462,12 @@ func TestCheckWritable(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatalf("WriteFile() = %v", err)
 	}
-	c := &sqliteCache{cfg: Config{CacheDbPath: filepath.Join(blocker, "Cache.db")}}
+	c := &sqliteCache{cfg: resilience.Config{CacheDbPath: filepath.Join(blocker, "Cache.db")}}
 	if err := c.CheckWritable(); err == nil {
 		t.Fatal("目录不可写时应返回 error")
 	}
 
-	cache, err := NewSqliteCache(Config{
+	cache, err := NewSqliteCache(resilience.Config{
 		CacheDbPath:         filepath.Join(t.TempDir(), "Data", "Cache.db"),
 		CacheMaxEntries:     10,
 		CacheMaxBytesMB:     1,
@@ -487,7 +489,7 @@ func TestCheckWritable(t *testing.T) {
 	if err := sqlite.CheckWritable(); err != nil {
 		t.Fatalf("CheckWritable() = %v", err)
 	}
-	if err := (&sqliteCache{cfg: Config{CacheDbPath: ":memory:"}}).CheckWritable(); err != nil {
+	if err := (&sqliteCache{cfg: resilience.Config{CacheDbPath: ":memory:"}}).CheckWritable(); err != nil {
 		t.Fatalf(":memory: CheckWritable() = %v", err)
 	}
 }

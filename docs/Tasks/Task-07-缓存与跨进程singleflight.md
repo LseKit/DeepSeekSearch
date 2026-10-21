@@ -2,6 +2,7 @@
 
 > **执行方式**：2 个原子任务，**每次开新窗口只做一个**。
 > **创建日期**：2026-10-20
+> **2026-10-21 包布局变更（DEBT-010）**：接口仍在 `internal/resilience` 根包，缓存与 singleflight 实现已迁入 `internal/resilience/cache`。下列路径与 `-run` 命令保留交付时口径，当前运行用 `go test ./internal/resilience/...`。
 
 ## 任务总览
 

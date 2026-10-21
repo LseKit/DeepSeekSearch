@@ -4,13 +4,14 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package budget
 
 import (
 	"testing"
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
 func TestBudget(t *testing.T) {
@@ -101,8 +102,8 @@ func TestBudget(t *testing.T) {
 	})
 }
 
-func newTestBudget(clk Clock) Budget {
-	return NewBudget(Config{
+func newTestBudget(clk resilience.Clock) resilience.Budget {
+	return NewBudget(resilience.Config{
 		MaxCallsPerWindow: 2,
 		WindowS:           60,
 		MaxCallsPerDay:    2,

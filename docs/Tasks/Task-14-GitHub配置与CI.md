@@ -610,7 +610,10 @@ jobs:
       - name: 逐包覆盖率门槛
         run: |
           set -euo pipefail
-          for entry in "internal/domain:80" "internal/config:80" "internal/resilience:80" "internal/tools:70"; do
+          for entry in "internal/domain:80" "internal/config:80" "internal/resilience:80" \
+                       "internal/resilience/ratelimit:80" "internal/resilience/retry:80" \
+                       "internal/resilience/budget:80" "internal/resilience/circuit:80" \
+                       "internal/resilience/cache:80" "internal/tools:70"; do
             pkg="${entry%%:*}"; want="${entry##*:}"
             go test -count=1 -covermode=atomic -coverprofile="/tmp/$(basename "$pkg").out" "./$pkg/"
             v="$(go tool cover -func="/tmp/$(basename "$pkg").out" | awk '/^total:/ {print substr($3,1,length($3)-1)}')"

@@ -18,6 +18,7 @@ import (
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/retry"
 )
 
 func TestHandleSearchErrors(t *testing.T) {
@@ -50,7 +51,7 @@ func TestHandleSearchErrors(t *testing.T) {
 			return domain.SearchResponse{}, domain.NewNetworkError("attempt_timeout", attempt, errors.New("timeout"))
 		}}
 		deps, _ := newTestDeps(t, client, func(d *Deps) {
-			d.Retry = resilience.NewRetry(resilience.Config{
+			d.Retry = retry.NewRetry(resilience.Config{
 				RetryEnabled:       true,
 				MaxAttempts:        2,
 				JitterMode:         "none",

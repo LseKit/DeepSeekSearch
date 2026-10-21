@@ -4,13 +4,14 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package retry
 
 import (
 	"testing"
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
 type fixedRand struct{ v float64 }
@@ -33,12 +34,12 @@ func TestRetry(t *testing.T) {
 			err     error
 			attempt int
 			want    bool
-			reason  Reason
+			reason  resilience.Reason
 		}{
-			{name: "429可重试", err: retryable, attempt: 1, want: true, reason: ReasonOK},
-			{name: "404不可重试", err: notRetryable, attempt: 1, want: false, reason: ReasonNotRetryable},
-			{name: "402余额不足不可重试", err: balance, attempt: 1, want: false, reason: ReasonNotRetryable},
-			{name: "次数耗尽", err: retryable, attempt: 4, want: false, reason: ReasonAttemptsExhausted},
+			{name: "429可重试", err: retryable, attempt: 1, want: true, reason: resilience.ReasonOK},
+			{name: "404不可重试", err: notRetryable, attempt: 1, want: false, reason: resilience.ReasonNotRetryable},
+			{name: "402余额不足不可重试", err: balance, attempt: 1, want: false, reason: resilience.ReasonNotRetryable},
+			{name: "次数耗尽", err: retryable, attempt: 4, want: false, reason: resilience.ReasonAttemptsExhausted},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -53,8 +54,8 @@ func TestRetry(t *testing.T) {
 
 	t.Run("disabled不重试", func(t *testing.T) {
 		t.Parallel()
-		r := testRetrier(clk, fixedRand{0.5}, func(c *Config) { c.RetryEnabled = false })
-		if got, reason := r.Should(retryable, 1); got || reason != ReasonDisabled {
+		r := testRetrier(clk, fixedRand{0.5}, func(c *resilience.Config) { c.RetryEnabled = false })
+		if got, reason := r.Should(retryable, 1); got || reason != resilience.ReasonDisabled {
 			t.Fatalf("Should() = (%v, %v), want (false, disabled)", got, reason)
 		}
 	})
@@ -76,7 +77,7 @@ func TestRetry(t *testing.T) {
 
 	t.Run("full_jitter", func(t *testing.T) {
 		t.Parallel()
-		r := testRetrier(clk, fixedRand{0.5}, func(c *Config) { c.JitterMode = "full" })
+		r := testRetrier(clk, fixedRand{0.5}, func(c *resilience.Config) { c.JitterMode = "full" })
 		if got := r.Delay(1); got != 1000*time.Millisecond {
 			t.Fatalf("Delay(1) = %v, want 1s", got)
 		}
@@ -87,7 +88,7 @@ func TestRetry(t *testing.T) {
 
 	t.Run("none_jitter", func(t *testing.T) {
 		t.Parallel()
-		r := testRetrier(clk, fixedRand{0.5}, func(c *Config) { c.JitterMode = "none" })
+		r := testRetrier(clk, fixedRand{0.5}, func(c *resilience.Config) { c.JitterMode = "none" })
 		if got := r.Delay(2); got != 3000*time.Millisecond {
 			t.Fatalf("Delay(2) = %v, want 3s", got)
 		}
@@ -95,7 +96,7 @@ func TestRetry(t *testing.T) {
 
 	t.Run("attempt越界clamp", func(t *testing.T) {
 		t.Parallel()
-		r := testRetrier(clk, fixedRand{0.5}, func(c *Config) { c.JitterMode = "none" })
+		r := testRetrier(clk, fixedRand{0.5}, func(c *resilience.Config) { c.JitterMode = "none" })
 		if got := r.Delay(6); got != 8000*time.Millisecond {
 			t.Fatalf("Delay(6) = %v, want 最后一档 8s", got)
 		}
@@ -103,7 +104,7 @@ func TestRetry(t *testing.T) {
 
 	t.Run("spread长度不足取0", func(t *testing.T) {
 		t.Parallel()
-		r := testRetrier(clk, fixedRand{0.5}, func(c *Config) {
+		r := testRetrier(clk, fixedRand{0.5}, func(c *resilience.Config) {
 			c.FixedMs = []int{1000, 3000}
 			c.SpreadMs = []int{1000}
 		})
@@ -119,7 +120,7 @@ func TestRetryBudget(t *testing.T) {
 	retryable := domain.NewUpstreamError(429, "", "", nil)
 	notRetryable := domain.NewUpstreamError(404, "", "", nil)
 	clk := newFakeClock(limiterNow)
-	cfg := Config{
+	cfg := resilience.Config{
 		RetryEnabled:       true,
 		MaxAttempts:        6,
 		JitterMode:         "none",
@@ -133,7 +134,7 @@ func TestRetryBudget(t *testing.T) {
 	t.Run("冷启动放行", func(t *testing.T) {
 		t.Parallel()
 		r := NewRetry(cfg, clk, fixedRand{0})
-		if ok, reason := r.Should(retryable, 1); !ok || reason != ReasonOK {
+		if ok, reason := r.Should(retryable, 1); !ok || reason != resilience.ReasonOK {
 			t.Fatalf("冷启动 Should() = (%v, %v)", ok, reason)
 		}
 	})
@@ -148,7 +149,7 @@ func TestRetryBudget(t *testing.T) {
 		for {
 			ok, reason := r.Should(retryable, 2)
 			if !ok {
-				if reason != ReasonBudgetExhausted {
+				if reason != resilience.ReasonBudgetExhausted {
 					t.Fatalf("reason = %v, want budget_exhausted", reason)
 				}
 				break
@@ -175,7 +176,7 @@ func TestRetryBudget(t *testing.T) {
 				break
 			}
 		}
-		if ok, reason := r2.Should(retryable, 1); !ok || reason != ReasonOK {
+		if ok, reason := r2.Should(retryable, 1); !ok || reason != resilience.ReasonOK {
 			t.Fatalf("另一个实例应独立预算: (%v, %v)", ok, reason)
 		}
 	})
@@ -193,14 +194,14 @@ func TestRetryBudget(t *testing.T) {
 			}
 		}
 		local.Advance(61 * time.Second)
-		if ok, reason := r.Should(retryable, 2); !ok || reason != ReasonOK {
+		if ok, reason := r.Should(retryable, 2); !ok || reason != resilience.ReasonOK {
 			t.Fatalf("窗口滑过后应放行: (%v, %v)", ok, reason)
 		}
 	})
 }
 
-func testRetrier(clk Clock, rnd RandSource, mutate func(*Config)) Retry {
-	cfg := Config{
+func testRetrier(clk resilience.Clock, rnd RandSource, mutate func(*resilience.Config)) resilience.Retry {
+	cfg := resilience.Config{
 		RetryEnabled: true,
 		MaxAttempts:  4,
 		JitterMode:   "fixed_plus_random",

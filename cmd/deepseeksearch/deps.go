@@ -17,24 +17,29 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/budget"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/cache"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/circuit"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/ratelimit"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/retry"
 	"github.com/LseKit/DeepSeekSearch/internal/tools"
 )
 
 func buildDeps(cfg *config.Config, tz *time.Location, clk resilience.Clock, logger *slog.Logger,
 	build domain.BuildInfo, newClient clientFactory) (tools.Deps, func() error, error) {
 	rc := resilienceConfig(cfg, tz, clk, logger)
-	cache, err := openCache(cfg, &rc, logger)
+	cacheStore, err := openCache(cfg, &rc, logger)
 	if err != nil {
 		return tools.Deps{}, nil, err
 	}
 	closeCache := func() error {
-		if cache == nil {
+		if cacheStore == nil {
 			return nil
 		}
-		return cache.Close()
+		return cacheStore.Close()
 	}
 
-	limiter, err := resilience.NewLimiter(limiterSpecs(cfg), cfg.RateLimit.MaxInflight,
+	limiter, err := ratelimit.NewLimiter(limiterSpecs(cfg), cfg.RateLimit.MaxInflight,
 		cfg.RateLimit.SearchShare, time.Duration(cfg.RateLimit.MaxWaitMs)*time.Millisecond, clk)
 	if err != nil {
 		if closeErr := closeCache(); closeErr != nil {
@@ -47,11 +52,11 @@ func buildDeps(cfg *config.Config, tz *time.Location, clk resilience.Clock, logg
 		Cfg:          *cfg,
 		Client:       newClient(deepseekConfig(cfg, build)),
 		Limiter:      limiter,
-		Retry:        resilience.NewRetry(rc, clk, nil),
-		Budget:       resilience.NewBudget(rc, clk),
-		Cache:        cache,
-		Singleflight: resilience.NewSingleflight(cache, clk),
-		Circuit:      resilience.NewCircuit(rc, clk),
+		Retry:        retry.NewRetry(rc, clk, nil),
+		Budget:       budget.NewBudget(rc, clk),
+		Cache:        cacheStore,
+		Singleflight: cache.NewSingleflight(cacheStore, clk),
+		Circuit:      circuit.NewCircuit(rc, clk),
 		Clock:        clk,
 		StartedAt:    clk.Now(),
 		Usage:        tools.NewUsageTracker(clk),
@@ -61,8 +66,8 @@ func buildDeps(cfg *config.Config, tz *time.Location, clk resilience.Clock, logg
 	return deps, closeCache, nil
 }
 
-func limiterSpecs(cfg *config.Config) map[string]resilience.BucketSpec {
-	return map[string]resilience.BucketSpec{
+func limiterSpecs(cfg *config.Config) map[string]ratelimit.BucketSpec {
+	return map[string]ratelimit.BucketSpec{
 		"search": {Rps: cfg.RateLimit.Search.Rps, Burst: cfg.RateLimit.Search.Burst},
 		"fetch":  {Rps: cfg.RateLimit.Fetch.Rps, Burst: cfg.RateLimit.Fetch.Burst},
 	}
@@ -129,9 +134,9 @@ func openCache(cfg *config.Config, rc *resilience.Config, logger *slog.Logger) (
 	if !cfg.Cache.Enabled {
 		return nil, nil
 	}
-	cache, err := resilience.NewSqliteCache(*rc)
+	cacheStore, err := cache.NewSqliteCache(*rc)
 	if err == nil {
-		return cache, nil
+		return cacheStore, nil
 	}
 	if !cfg.Cache.DegradedOk {
 		return nil, fmt.Errorf("缓存打开失败: %w", err)

@@ -369,10 +369,10 @@ $ echo "共 26 个断言（P1~P26 全覆盖），全部 PASS"
 | 6 | 白名单里**没有的包**（即 `internal/` 下新增了一个包但没登记）MUST 报错，MUST NOT 静默放过 |
 | 7 | 依赖环检测用 DFS，**只走项目内那一组**（外部依赖不构成我们的架构环），报错时输出完整环路径 |
 | 8 | `domain` 包的项目内 import 数 MUST 为 0 |
-| 9 | `TestToolNames` 写死 `want = ["ds_fetch","ds_health","ds_search"]`；`TestToolAnnotations` 断言三个工具的 `ReadOnlyHint==true` 与 `IdempotentHint==true`（都是 `bool`），以及 `OpenWorldHint != nil && *OpenWorldHint==true`（`*bool`）—— go-sdk v1.8.0 的类型口径见 `15-协议契约` §七之二 |
+| 9 | `TestToolNames` 写死 `want = ["ds_extract","ds_fetch","ds_health","ds_research","ds_search"]`（字典序；2026-10-21 新增两个组合工具）；`TestToolAnnotations` 断言五个工具的 `ReadOnlyHint==true` 与 `IdempotentHint==true`（都是 `bool`），以及 `OpenWorldHint != nil && *OpenWorldHint==true`（`*bool`）—— go-sdk v1.8.0 的类型口径见 `15-协议契约` §七之二 |
 | 10 | `CheckSize.sh` 实现 **F-S1/F-S3/F-S5**；F-S3 用 `gocyclo`（未安装时打印警告，判据是**输出非空**而不是退出码 —— 22 号 §3.1 的 🔴 注释）。F-S5 的导出符号数 MUST 用 `Scripts/exportcount.go` 按 `go/ast` 精确统计（顶层声明 + 方法 + const/var/type 块成员，**MUST NOT 把 struct 字段算进去**）；文件内联的 awk 近似会把 `config` 的 33 个导出数吹到 117 |
-| 11 | `CheckSize.sh` 从 `豁免台账.md` 的 ` ```exempt ` 块读豁免，格式是**五段**：`<文件相对路径> <红线代号> <实测值> "<理由>" <复核日期 YYYY-MM-DD>`（空格分隔）。红线代号为 `—` 的**非规模类**条目（台账现有第 2 条 `domain/time.go` 的 G6 例外）MUST 跳过而不是解析失败。MUST 打印已加载的豁免条数。规模存量违规走 `size-baseline.json`（ADR-017），不占豁免额度 |
-| 12 | 🔴 **F-S2（函数 ≤50 行）与 F-S4（嵌套 ≤3 层）由 `TestFunctionLength` / `TestNestingDepth` 用 `go/ast` 实现**（22 号 §三 的分工表）。两者 MUST 读 `Scripts/size-baseline.json`：基线存在的 key 按基线值放行（当前值 ≤ 基线），基线不存在或当前值 > 基线 ⇒ 红 |
+| 11 | `CheckSize.sh` 从 `豁免台账.md` 的 ` ```exempt ` 块读豁免，格式是**五段**：`<文件相对路径> <红线代号> <实测值> "<理由>" <复核日期 YYYY-MM-DD>`（空格分隔）。红线代号为 `—` 的**非规模类**条目（台账现有第 2 条 `domain/time.go` 的 G6 例外）MUST 跳过而不是解析失败。MUST 打印已加载的豁免条数。规模存量违规原走 `size-baseline.json`（ADR-017），不占豁免额度；2026-10-21 `DEBT-010` 清零后该文件已删除，全部按原阈值判定 |
+| 12 | 🔴 **F-S2（函数 ≤50 行）与 F-S4（嵌套 ≤3 层）由 `TestFunctionLength` / `TestNestingDepth` 用 `go/ast` 实现**（22 号 §三 的分工表）。交付时两者读 `Scripts/size-baseline.json`；`DEBT-010` 清零后基线读取已移除，直接按原阈值判定 |
 | 13 | F-S2 口径：数函数体 `{` 与 `}` 之间的**非注释非空**行数；整行注释（`//` 开头）与完全落在块注释区间内的行不计；**行尾注释所在行算代码行**（它确实占了一行代码） |
 | 14 | F-S4 口径：`if` / `for` / `range` / `switch` / `type switch` / `select` / `func` 字面量各 +1 层，函数体本身是第 0 层（与 20 号 §三「卫语句提前 return」的意图一致） |
 | 15 | 🔴 `TestSizeLimits` 调 `Scripts/CheckSize.sh`，参数 MUST 是 `("..", "../../Doc")` —— `go test` 的工作目录是**包目录** `GitHubSrc/internal/`，所以代码根是 `..`、文档根是 `../../Doc`（部署根的 `Doc/`）。写成 `"../Doc"` 会解析成 `GitHubSrc/Doc`（不存在）⇒ 豁免台账加载不到、domain 的 F-S5 直接 FAIL。CI 语境没有 `Doc/` 时，脚本回退到 `<代码根>/docs/Engineering/豁免台账.md` |
@@ -382,7 +382,7 @@ $ echo "共 26 个断言（P1~P26 全覆盖），全部 PASS"
 | 19 | `SyncDocs.sh` 在**文档根不存在**（CI 语境：仓库里只有 `docs/`，没有 `Doc/`）时 MUST 打印明确的 `[SKIP]` 原因并退化为「验证 `docs/` 存在且非空」—— 这一条能抓住「忘了提交 `docs/`」，是真检查而不是空转。MUST NOT 直接退出 0 什么都不做 |
 | 20 | `CheckDocDrift.sh` 做 **8 项**比对，逐项与 22 号 §5.1 的表一一对应（`[N/8]` 的 `8` 以脚本 `say` 的分母为准）。调用签名固定两参：`CheckDocDrift.sh <文档根> <代码根>` |
 | 21 | 全部脚本 `set -euo pipefail`（`CheckSize.sh` / `CheckRepoFiles.sh` 例外用 `set -uo pipefail`，因为要收集全部失败 —— 见 22 号 §3.1）+ 可执行位 `0755` |
-| 22 | 🔴 **存量规模基线（ADR-017）**：首次执行 F-S1~F-S5 时实测存量有 29 处超限（F-S2 5 / F-S3 20 / F-S5 4 包；F-S4 的 1 处当场修复）。这些 MUST 写入 `GitHubSrc/Scripts/size-baseline.json`，判定 = 当前值 > 基线值 ⇒ FAIL，当前值 ≤ 基线值 ⇒ PASS；基线里不存在的新函数/新文件/新包按原阈值判定，超标即 FAIL。MUST NOT 往基线里新增条目或调大数值 |
+| 22 | 🔴 **存量规模基线（ADR-017，已退出）**：交付时曾把 29 处存量写入 `GitHubSrc/Scripts/size-baseline.json` 冻结；`DEBT-010` 于 2026-10-21 清零后基线文件删除、读取逻辑移除，当前所有代码直接按原阈值判定，MUST NOT 重新引入基线 |
 | 23 | 基线条目 MUST 含 `phase` / `reason` / `remediation` 三个字段，`reason` 非空；F-S5 以包为 key 记录 `files` / `lines` / `exports` 与对应 `limits`。基线 schema 与分工见 `Engineering/22-架构守护规则` §3.4 |
 | 24 | 必须补三条**变异测试**（手工执行并贴输出）：① 基线任一项 +1 ⇒ 对应守护变红；② 删除基线中某项但代码仍超标 ⇒ 变红；③ 新增一个复杂度 11 的函数且不进基线 ⇒ 变红 |
 
@@ -897,7 +897,7 @@ echo "[OK] 已同步 $(find "$DEST" -name '*.md' | wc -l) 份文档到 $DEST"
 | 临时把 `Scripts/CheckSize.sh` 改名 + `CI=1` | `TestSizeLimits` **Fatalf**（不是 Skip） |
 | 文档加一个错误码但代码没加 | `CheckDocDrift.sh` 退出 1 |
 | 改 `Doc/` 里一个字但不跑同步 | `SyncDocs.sh --check` 退出 1 并打印差异 |
-| 🔴 基线任一项 `value`/`exports`/`files`/`lines` +1（代码不变） | `CheckSize.sh` / `TestFunctionLength` 变红（ADR-017 只减不增） |
+| 🔴 单包导出符号临时加 1 个（超过 20） | `CheckSize.sh` 的 F-S5 变红（无基线，直接按阈值判定） |
 | 🔴 删除基线中 `pruneByAge` 条目（代码仍 68 行） | `TestFunctionLength` 变红 |
 | 🔴 新增一个复杂度 11 的函数且不进基线 | `CheckSize.sh` 的 F-S3 变红 |
 
@@ -944,7 +944,7 @@ SYNC_OK
 
 - [ ] 3 个脚本（`CheckSize.sh` / `CheckDocDrift.sh` / `SyncDocs.sh`）全部有可执行位且按 §7 的两参签名退出 0
 - [ ] 6 个守护测试（`TestPackageDependencies` / `TestFunctionLength` / `TestNestingDepth` / `TestSizeLimits` / `TestToolNames` / `TestToolAnnotations`）全绿
-- [ ] 🔴 `Scripts/size-baseline.json` 已落地：`schema=1`，F-S2/F-S3/F-S5 存量条目齐全，每条含非空 `reason` 与 `remediation`；`CheckSize.sh` 打印已加载基线条数；`TestFunctionLength` / `TestNestingDepth` 读同一份基线
+- [x] 🔴 基线机制已完成历史使命：交付时 `Scripts/size-baseline.json` 冻结 29 处存量（F-S2/F-S3/F-S5）；`DEBT-010` 于 2026-10-21 清零后基线文件删除、读取逻辑移除
 - [ ] 🔴 三条基线变异测试（§6 末尾）各验证一次并贴输出：基线 +1 变红、删除条目后代码仍超标变红、新增复杂度 11 的函数不进基线变红
 - [ ] §6 的 15 个「故意违规」场景各验证一次（贴输出），其中**第 2、3 条**（外部 import）与**第 8、9 条**（F-S2/F-S4）MUST 都真的变红
 - [ ] `TestSizeLimits` 在 `CI=1` + 脚本缺失时是 `Fatalf` 而不是 `Skip`（贴输出）

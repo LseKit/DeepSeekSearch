@@ -4,13 +4,14 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package circuit
 
 import (
 	"testing"
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
 func TestCircuit(t *testing.T) {
@@ -198,7 +199,7 @@ func TestCircuit(t *testing.T) {
 	t.Run("自定义阈值与探测数", func(t *testing.T) {
 		t.Parallel()
 		clk := newFakeClock(limiterNow)
-		c := newTestCircuit(clk, func(cfg *Config) {
+		c := newTestCircuit(clk, func(cfg *resilience.Config) {
 			cfg.CircuitFailThreshold = 2
 			cfg.CircuitHalfOpenProbes = 1
 		})
@@ -219,7 +220,7 @@ func TestCircuit(t *testing.T) {
 
 	t.Run("空配置默认值兜底", func(t *testing.T) {
 		t.Parallel()
-		c := NewCircuit(Config{}, newFakeClock(limiterNow))
+		c := NewCircuit(resilience.Config{}, newFakeClock(limiterNow))
 		for i := 0; i < 4; i++ {
 			c.Record("search", failErr)
 		}
@@ -233,8 +234,8 @@ func TestCircuit(t *testing.T) {
 	})
 }
 
-func newTestCircuit(clk Clock, mutate func(*Config)) Circuit {
-	cfg := Config{
+func newTestCircuit(clk resilience.Clock, mutate func(*resilience.Config)) resilience.Circuit {
+	cfg := resilience.Config{
 		CircuitFailThreshold:  5,
 		CircuitOpenMs:         15000,
 		CircuitHalfOpenProbes: 2,

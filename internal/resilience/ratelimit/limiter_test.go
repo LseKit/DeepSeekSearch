@@ -4,7 +4,7 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package ratelimit
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
 var limiterNow = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
@@ -187,7 +188,7 @@ func TestNewLimiter(t *testing.T) {
 		maxInflight int
 		share       float64
 		maxWait     time.Duration
-		clk         Clock
+		clk         resilience.Clock
 	}{
 		{name: "nil clock", spec: valid, maxInflight: 8, share: 0.5, maxWait: time.Second, clk: nil},
 		{name: "缺少fetch", spec: map[string]BucketSpec{"search": {Rps: 1, Burst: 1}}, maxInflight: 8, share: 0.5, maxWait: time.Second, clk: newFakeClock(limiterNow)},
@@ -212,19 +213,6 @@ func TestNewLimiter(t *testing.T) {
 	}
 }
 
-func TestClock(t *testing.T) {
-	clk := SystemClock()
-	if clk.Now().IsZero() {
-		t.Fatal("SystemClock.Now() 为零值")
-	}
-	select {
-	case <-clk.After(0):
-	case <-time.After(time.Second):
-		t.Fatal("SystemClock.After(0) 未立即触发")
-	}
-	clk.Sleep(0)
-}
-
 func defaultSpec() map[string]BucketSpec {
 	return map[string]BucketSpec{
 		"search": {Rps: 1, Burst: 1},
@@ -232,7 +220,7 @@ func defaultSpec() map[string]BucketSpec {
 	}
 }
 
-func mustLimiter(t *testing.T, clk Clock, spec map[string]BucketSpec, maxInflight int, share float64, maxWait time.Duration) Limiter {
+func mustLimiter(t *testing.T, clk resilience.Clock, spec map[string]BucketSpec, maxInflight int, share float64, maxWait time.Duration) resilience.Limiter {
 	t.Helper()
 	l, err := NewLimiter(spec, maxInflight, share, maxWait, clk)
 	if err != nil {

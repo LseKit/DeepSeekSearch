@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 文件名: CheckSize.sh
-# 用途: 检查 F-S1 / F-S3 / F-S5 规模红线（基线棘轮，ADR-017）。
+# 用途: 检查 F-S1 / F-S3 / F-S5 规模红线。
 #       F-S2 / F-S4 由 internal/arch_test.go 的 TestFunctionLength / TestNestingDepth 检查。
-#       存量违规冻结在 Scripts/size-baseline.json，判定 = 当前值 > 基线值 ⇒ FAIL。
+#       无存量基线（DEBT-010 已于 2026-10-21 清零）：超标即 FAIL。
 # 创建日期: 2026-10-20
 # 作者: 小逸
 # 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -15,7 +15,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_ROOT="${1:-..}"
 DOC_ROOT="${2:-../../Doc}"
 EXEMPT_FILE="$DOC_ROOT/Engineering/豁免台账.md"
-BASELINE="$SCRIPT_DIR/size-baseline.json"
 FAIL=0
 
 # CI 语境只有同步产物 docs/、没有 Doc/。TestSizeLimits 固定传 ../../Doc，
@@ -50,52 +49,6 @@ echo "已加载规模豁免 $EXEMPT_N 条"
 exempted() { [ -n "${EXEMPT["$1|$2"]:-}" ]; }
 
 # ---------------------------------------------------------------------------
-# 读取存量基线（ADR-017）。键格式：
-#   F-S1/F-S2/F-S3/F-S4: <包>/<文件>[:<函数>]
-#   F-S5:                 <包> → files/lines/exports
-# 基线不存在时视为已清零：全部按原阈值判定。
-# ---------------------------------------------------------------------------
-declare -A B_S1=() B_S2=() B_S3=() B_S4=() B_S5_FILES=() B_S5_LINES=() B_S5_EXPORTS=()
-BASELINE_N=0
-if [ -f "$BASELINE" ]; then
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "[FAIL] 基线 $BASELINE 存在但 python3 不可用，无法执行棘轮判定"
-    exit 1
-  fi
-  while IFS=$'\t' read -r section key v1 v2 v3; do
-    [ -z "$section" ] && continue
-    case "$section" in
-      f_s1) B_S1["$key"]="$v1" ;;
-      f_s2) B_S2["$key"]="$v1" ;;
-      f_s3) B_S3["$key"]="$v1" ;;
-      f_s4) B_S4["$key"]="$v1" ;;
-      f_s5) B_S5_FILES["$key"]="$v1"; B_S5_LINES["$key"]="$v2"; B_S5_EXPORTS["$key"]="$v3" ;;
-    esac
-    BASELINE_N=$((BASELINE_N + 1))
-  done < <(python3 - "$BASELINE" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as fh:
-    data = json.load(fh)
-for key, entry in data.get("f_s1_file_lines", {}).items():
-    print("f_s1\t%s\t%d" % (key, entry["value"]))
-for key, entry in data.get("f_s2_function_lines", {}).items():
-    print("f_s2\t%s\t%d" % (key, entry["value"]))
-for key, entry in data.get("f_s3_cyclomatic", {}).items():
-    print("f_s3\t%s\t%d" % (key, entry["value"]))
-for key, entry in data.get("f_s4_nesting", {}).items():
-    print("f_s4\t%s\t%d" % (key, entry["value"]))
-for key, entry in data.get("f_s5_package", {}).items():
-    print("f_s5\t%s\t%d\t%d\t%d" % (key, entry["files"], entry["lines"], entry["exports"]))
-PY
-)
-  echo "已加载规模基线 $BASELINE_N 项"
-else
-  echo "ℹ️  未找到规模基线 $BASELINE（视作 DEBT-010 已清零，全部按原阈值判定）"
-fi
-
-# ---------------------------------------------------------------------------
 # F-S1 单文件 ≤600 物理行（含空行与注释）
 # ---------------------------------------------------------------------------
 for base in internal cmd; do
@@ -104,10 +57,7 @@ for base in internal cmd; do
     rel="${f#"$SRC_ROOT"/}"
     n=$(wc -l < "$f")
     if [ "$n" -gt 600 ]; then
-      base_value="${B_S1[$rel]:-}"
-      if [ -n "$base_value" ] && [ "$n" -le "$base_value" ]; then
-        echo "F-S1 冻结: $rel 有 $n 行（基线 $base_value）"
-      elif exempted "$rel" F-S1; then
+      if exempted "$rel" F-S1; then
         echo "F-S1 豁免: $rel 有 $n 行（台账放行）"
       else
         echo "F-S1 违规: $rel 有 $n 行 (上限 600)"
@@ -133,18 +83,14 @@ while read -r rel files lines exports; do
     continue
   fi
   check_metric() {
-    local metric="$1" current="$2" limit="$3" base="$4"
+    local metric="$1" current="$2" limit="$3"
     [ "$current" -le "$limit" ] && return 0
-    if [ -n "$base" ] && [ "$current" -le "$base" ]; then
-      echo "F-S5 冻结: $rel $metric $current（基线 $base）"
-      return 0
-    fi
     echo "F-S5 $metric 违规: $rel $current (上限 $limit)"
     FAIL=1
   }
-  check_metric files "$files" 10 "${B_S5_FILES[$rel]:-}"
-  check_metric lines "$lines" 3000 "${B_S5_LINES[$rel]:-}"
-  check_metric exports "$exports" 20 "${B_S5_EXPORTS[$rel]:-}"
+  check_metric files "$files" 10
+  check_metric lines "$lines" 3000
+  check_metric exports "$exports" 20
 done <<< "$SIZE_ROWS"
 
 # ---------------------------------------------------------------------------
@@ -170,13 +116,8 @@ if [ -n "$GOCYCLO_BIN" ]; then
     file="${loc%:*:*}"
     rel="${file#"$SRC_ROOT"/}"
     key="$rel:$fn"
-    base_value="${B_S3[$key]:-}"
-    if [ -n "$base_value" ] && [ "$cx" -le "$base_value" ]; then
-      echo "F-S3 冻结: $key 复杂度 $cx（基线 $base_value）"
-    else
-      echo "F-S3 违规: $key 复杂度 $cx（上限 10）"
-      FAIL=1
-    fi
+    echo "F-S3 违规: $key 复杂度 $cx（上限 10）"
+    FAIL=1
   done <<< "$cyclo_out"
 else
   echo "⚠️  gocyclo 未安装，F-S3 未检查（go.mod 的 tool 指令或 90-Qoder执行手册 §二）"

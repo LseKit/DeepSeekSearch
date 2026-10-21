@@ -4,7 +4,7 @@
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
-package resilience
+package cache
 
 import (
 	"bytes"
@@ -17,11 +17,12 @@ import (
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
 
 const sfWaitMs = 2000
 
-func newSF(t *testing.T, cache Cache, clk Clock, owner string) *singleflight {
+func newSF(t *testing.T, cache resilience.Cache, clk resilience.Clock, owner string) *singleflight {
 	t.Helper()
 	sf, ok := NewSingleflight(cache, clk).(*singleflight)
 	if !ok {
@@ -34,7 +35,7 @@ func newSF(t *testing.T, cache Cache, clk Clock, owner string) *singleflight {
 	return sf
 }
 
-func commitTo(c Cache, key string) func(context.Context, []byte) error {
+func commitTo(c resilience.Cache, key string) func(context.Context, []byte) error {
 	return func(ctx context.Context, val []byte) error {
 		return c.Put(ctx, key, val, time.Hour)
 	}

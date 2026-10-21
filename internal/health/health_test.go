@@ -23,6 +23,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
+	"github.com/LseKit/DeepSeekSearch/internal/resilience/ratelimit"
 )
 
 type fakeClient struct {
@@ -102,10 +103,10 @@ func (c *healthCache) CheckWritable() error               { return c.writableErr
 
 type diagLimiter struct {
 	*fakeLimiter
-	diag resilience.LimiterDiagnostics
+	diag ratelimit.LimiterDiagnostics
 }
 
-func (l *diagLimiter) Diagnostics(string) resilience.LimiterDiagnostics { return l.diag }
+func (l *diagLimiter) Diagnostics(string) ratelimit.LimiterDiagnostics { return l.diag }
 
 func healthRequest(t *testing.T, probe bool) *mcp.CallToolRequest {
 	t.Helper()
@@ -288,7 +289,7 @@ func TestHealth(t *testing.T) {
 		deps := healthyDeps(t, &fakeClient{})
 		deps.Limiter = &diagLimiter{
 			fakeLimiter: &fakeLimiter{},
-			diag: resilience.LimiterDiagnostics{
+			diag: ratelimit.LimiterDiagnostics{
 				Key: "search", Inflight: 4, Quota: 4,
 				Waiters: 0, EstimatedWaitMs: 0, Stage: "inflight",
 			},
