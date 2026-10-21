@@ -145,6 +145,7 @@ GitHubSrc/
 ├── internal/transport/     stdio + Streamable HTTP + 中间件链
 ├── internal/toolschema/    工具 JSON Schema 字面量（纯数据叶子包，零依赖）
 ├── internal/mcputil/       MCP 入参/结果薄封装（叶子包）
+├── internal/toolvalidate/  工具层纯校验函数（叶子包）
 ├── internal/arch_test.go   架构守护测试
 ├── Scripts/                CheckSize / CheckDocDrift / SyncDocs / Release
 └── docs/                   从 ../Doc 单向同步，MUST NOT 手写

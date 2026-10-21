@@ -418,3 +418,119 @@ func (c *sqliteCache) logInfo(event string, args ...any) {
 		c.logger.Info(event, args...)
 	}
 }
+
+func (c *sqliteCache) cacheMaxEntryBytes() int64 {
+	return int64(c.cfg.CacheMaxEntryKB) * 1024
+}
+
+func (c *sqliteCache) searchTotalTimeoutMs() int { return c.cfg.TotalTimeoutSearchMs }
+
+func (c *sqliteCache) fetchTotalTimeoutMs() int { return c.cfg.TotalTimeoutFetchMs }
+
+func (c *sqliteCache) singleflightLogger() cacheLogger { return c.logger }
+
+func (c *sqliteCache) acquireLease(ctx context.Context, key, owner string, expiresAt int64) (bool, error) {
+	if c.closed.Load() {
+		return false, errCacheClosed
+	}
+	res, err := c.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO inflight (k, owner, expires_at, last_error_code) VALUES (?, ?, ?, 0)`,
+		key, owner, expiresAt)
+	if err != nil {
+		c.recordFailure(err)
+		return false, fmt.Errorf("acquire lease: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		c.recordFailure(err)
+		return false, fmt.Errorf("acquire lease rows affected: %w", err)
+	}
+	c.recordSuccess()
+	return affected == 1, nil
+}
+
+func (c *sqliteCache) preemptLease(ctx context.Context, key, owner string, expiresAt, now int64) (bool, error) {
+	if c.closed.Load() {
+		return false, errCacheClosed
+	}
+	res, err := c.db.ExecContext(ctx,
+		`UPDATE inflight SET owner = ?, expires_at = ?, last_error_code = 0
+         WHERE k = ? AND expires_at < ?`,
+		owner, expiresAt, key, now)
+	if err != nil {
+		c.recordFailure(err)
+		return false, fmt.Errorf("preempt lease: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		c.recordFailure(err)
+		return false, fmt.Errorf("preempt lease rows affected: %w", err)
+	}
+	c.recordSuccess()
+	return affected == 1, nil
+}
+
+func (c *sqliteCache) readLease(ctx context.Context, key string) (leaseRow, bool, error) {
+	if c.closed.Load() {
+		return leaseRow{}, false, errCacheClosed
+	}
+	var lease leaseRow
+	err := c.db.QueryRowContext(ctx,
+		`SELECT owner, expires_at, last_error_code FROM inflight WHERE k = ?`, key).
+		Scan(&lease.Owner, &lease.ExpiresAt, &lease.LastErrorCode)
+	if errors.Is(err, sql.ErrNoRows) {
+		c.recordSuccess()
+		return leaseRow{}, false, nil
+	}
+	if err != nil {
+		c.recordFailure(err)
+		return leaseRow{}, false, fmt.Errorf("read lease: %w", err)
+	}
+	c.recordSuccess()
+	return lease, true, nil
+}
+
+func (c *sqliteCache) markLeaseError(ctx context.Context, key, owner string, code int) error {
+	if c.closed.Load() {
+		return errCacheClosed
+	}
+	if _, err := c.db.ExecContext(ctx,
+		`UPDATE inflight SET last_error_code = ? WHERE k = ? AND owner = ?`,
+		code, key, owner); err != nil {
+		c.recordFailure(err)
+		return fmt.Errorf("mark lease error: %w", err)
+	}
+	c.recordSuccess()
+	return nil
+}
+
+func (c *sqliteCache) deleteLease(ctx context.Context, key, owner string) error {
+	if c.closed.Load() {
+		return errCacheClosed
+	}
+	if _, err := c.db.ExecContext(ctx,
+		`DELETE FROM inflight WHERE k = ? AND owner = ?`, key, owner); err != nil {
+		c.recordFailure(err)
+		return fmt.Errorf("delete lease: %w", err)
+	}
+	c.recordSuccess()
+	return nil
+}
+
+func (c *sqliteCache) releaseAllLeases(ctx context.Context, owner string) (int64, error) {
+	if c.closed.Load() {
+		return 0, errCacheClosed
+	}
+	res, err := c.db.ExecContext(ctx, `DELETE FROM inflight WHERE owner = ?`, owner)
+	if err != nil {
+		c.recordFailure(err)
+		return 0, fmt.Errorf("release all leases: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		c.recordFailure(err)
+		return 0, fmt.Errorf("release all leases rows affected: %w", err)
+	}
+	c.recordSuccess()
+	return affected, nil
+}

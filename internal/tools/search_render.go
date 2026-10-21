@@ -112,7 +112,7 @@ func (h *searchHandler) render(env cachedSearchEnvelope, fromCache bool) (res *m
 }
 
 // applyDedupe 执行三层去重并把丢弃统计写进日志与 warnings。
-func (h *searchHandler) applyDedupe(items []domain.SearchResult, warnings []string) ([]domain.SearchResult, []string) {
+func (h *searchHandler) applyDedupe(items []domain.SearchResult, warnings []string) (out []domain.SearchResult, outWarnings []string) {
 	if !h.deps.Cfg.Dedupe.Enabled {
 		return items, warnings
 	}

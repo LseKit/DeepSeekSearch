@@ -88,7 +88,7 @@ func pruneByAge(dir, prefix string, today time.Time, maxAge, maxBackups int, com
 	todayDate := dateOnly(today)
 	cutoff := todayDate.AddDate(0, 0, -(maxAge - 1))
 	kept, removed, errs := removeOldFiles(dir, selectOldFiles(entries, prefix, todayDate), cutoff)
-	kept, trimmed, trimErrs := trimAndCompress(dir, kept, maxBackups, compress)
+	_, trimmed, trimErrs := trimAndCompress(dir, kept, maxBackups, compress)
 	return removed + trimmed, errors.Join(append(errs, trimErrs...)...)
 }
 

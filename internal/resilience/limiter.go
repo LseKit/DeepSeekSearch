@@ -52,38 +52,16 @@ type bucket struct {
 
 // NewLimiter 构造限流器；配置非法返回 3090，不 panic。
 func NewLimiter(spec map[string]BucketSpec, maxInflight int, searchShare float64, maxWait time.Duration, clk Clock) (Limiter, error) {
-	if clk == nil {
-		return nil, configError("Clock 未注入")
+	if err := validateLimiterArgs(clk, maxWait, maxInflight, searchShare); err != nil {
+		return nil, err
 	}
-	if maxWait <= 0 {
-		return nil, configError("maxWait 必须 > 0")
+	searchQuota, fetchQuota, err := splitQuota(maxInflight, searchShare)
+	if err != nil {
+		return nil, err
 	}
-	if maxInflight < 3 || maxInflight > 64 {
-		return nil, configError("maxInflight 必须 3~64，实际 %d", maxInflight)
+	if err := checkBuckets(spec); err != nil {
+		return nil, err
 	}
-	if searchShare <= 0 || searchShare >= 1 {
-		return nil, configError("searchShare 必须满足 0 < x < 1，实际 %v", searchShare)
-	}
-
-	searchQuota := max(1, int(math.Floor(float64(maxInflight)*searchShare)))
-	fetchQuota := max(2, maxInflight-searchQuota)
-	if searchQuota+fetchQuota > maxInflight {
-		return nil, configError("per-key 配额之和 %d 超过 maxInflight %d", searchQuota+fetchQuota, maxInflight)
-	}
-
-	for _, key := range []string{"search", "fetch"} {
-		item, ok := spec[key]
-		if !ok {
-			return nil, configError("缺少限流 key %q", key)
-		}
-		if item.Rps <= 0 {
-			return nil, configError("%s.rps 必须 > 0", key)
-		}
-		if item.Burst < 1 {
-			return nil, configError("%s.burst 必须 ≥ 1", key)
-		}
-	}
-
 	l := &limiter{
 		clk:     clk,
 		buckets: make(map[string]*bucket, 2),
@@ -91,13 +69,51 @@ func NewLimiter(spec map[string]BucketSpec, maxInflight int, searchShare float64
 		depths:  make(map[string]*atomic.Int32, 2),
 		maxWait: maxWait,
 	}
-	l.buckets["search"] = newBucket(spec["search"])
-	l.buckets["fetch"] = newBucket(spec["fetch"])
-	l.sems["search"] = make(chan struct{}, searchQuota)
-	l.sems["fetch"] = make(chan struct{}, fetchQuota)
-	l.depths["search"] = &atomic.Int32{}
-	l.depths["fetch"] = &atomic.Int32{}
+	l.buckets["search"], l.buckets["fetch"] = newBucket(spec["search"]), newBucket(spec["fetch"])
+	l.sems["search"], l.sems["fetch"] = make(chan struct{}, searchQuota), make(chan struct{}, fetchQuota)
+	l.depths["search"], l.depths["fetch"] = &atomic.Int32{}, &atomic.Int32{}
 	return l, nil
+}
+
+func validateLimiterArgs(clk Clock, maxWait time.Duration, maxInflight int, searchShare float64) error {
+	if clk == nil {
+		return configError("Clock 未注入")
+	}
+	if maxWait <= 0 {
+		return configError("maxWait 必须 > 0")
+	}
+	if maxInflight < 3 || maxInflight > 64 {
+		return configError("maxInflight 必须 3~64，实际 %d", maxInflight)
+	}
+	if searchShare <= 0 || searchShare >= 1 {
+		return configError("searchShare 必须满足 0 < x < 1，实际 %v", searchShare)
+	}
+	return nil
+}
+
+func splitQuota(maxInflight int, searchShare float64) (searchQuota, fetchQuota int, err error) {
+	searchQuota = max(1, int(math.Floor(float64(maxInflight)*searchShare)))
+	fetchQuota = max(2, maxInflight-searchQuota)
+	if searchQuota+fetchQuota > maxInflight {
+		return 0, 0, configError("per-key 配额之和 %d 超过 maxInflight %d", searchQuota+fetchQuota, maxInflight)
+	}
+	return searchQuota, fetchQuota, nil
+}
+
+func checkBuckets(spec map[string]BucketSpec) error {
+	for _, key := range []string{"search", "fetch"} {
+		item, ok := spec[key]
+		if !ok {
+			return configError("缺少限流 key %q", key)
+		}
+		if item.Rps <= 0 {
+			return configError("%s.rps 必须 > 0", key)
+		}
+		if item.Burst < 1 {
+			return configError("%s.burst 必须 ≥ 1", key)
+		}
+	}
+	return nil
 }
 
 func newBucket(spec BucketSpec) *bucket {
@@ -145,7 +161,6 @@ func (l *limiter) Wait(ctx context.Context, key string) error {
 	if !ok {
 		return fmt.Errorf("resilience: 未知限流 key %q", key)
 	}
-
 	start := l.clk.Now()
 	deadline := start.Add(l.maxWait)
 	depth.Add(1)
@@ -158,7 +173,22 @@ func (l *limiter) Wait(ctx context.Context, key string) error {
 			cancelToken()
 		}
 	}()
+	if err := l.waitToken(ctx, tokenWait, deadline, depth, start); err != nil {
+		return err
+	}
+	if l.acquireSem(sem) {
+		keepToken = true
+		return nil
+	}
+	cancelToken()
+	remaining := deadline.Sub(l.clk.Now())
+	if remaining <= 0 {
+		return l.queueTimeout("inflight", depth, start)
+	}
+	return l.waitInflight(ctx, sem, remaining, depth, start)
+}
 
+func (l *limiter) waitToken(ctx context.Context, tokenWait time.Duration, deadline time.Time, depth *atomic.Int32, start time.Time) error {
 	remaining := deadline.Sub(l.clk.Now())
 	if remaining <= 0 {
 		return l.queueTimeout("token", depth, start)
@@ -169,22 +199,19 @@ func (l *limiter) Wait(ctx context.Context, key string) error {
 		}
 		return l.queueTimeout("token", depth, start)
 	}
-	if err := waitClock(ctx, l.clk, tokenWait); err != nil {
-		return err
-	}
+	return waitClock(ctx, l.clk, tokenWait)
+}
 
+func (l *limiter) acquireSem(sem chan struct{}) bool {
 	select {
 	case sem <- struct{}{}:
-		keepToken = true
-		return nil
+		return true
 	default:
+		return false
 	}
+}
 
-	cancelToken()
-	remaining = deadline.Sub(l.clk.Now())
-	if remaining <= 0 {
-		return l.queueTimeout("inflight", depth, start)
-	}
+func (l *limiter) waitInflight(ctx context.Context, sem chan struct{}, remaining time.Duration, depth *atomic.Int32, start time.Time) error {
 	select {
 	case sem <- struct{}{}:
 		return nil

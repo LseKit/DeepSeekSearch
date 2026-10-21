@@ -99,12 +99,25 @@ func (c *sqliteCache) flushHits(ctx context.Context) (err error) {
 		return fmt.Errorf("begin hit flush: %w", err)
 	}
 	defer func() {
-		if err != nil {
-			if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
-				err = errors.Join(err, fmt.Errorf("rollback hit flush: %w", rbErr))
-			}
+		if err == nil {
+			return
+		}
+		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+			err = errors.Join(err, fmt.Errorf("rollback hit flush: %w", rbErr))
 		}
 	}()
+	if execErr := execHitUpdates(ctx, tx, keys, deltas, lastHits); execErr != nil {
+		err = execErr
+		return err
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		return fmt.Errorf("commit hit flush: %w", commitErr)
+	}
+	c.reconcileHits(keys, deltas)
+	return nil
+}
+
+func execHitUpdates(ctx context.Context, tx *sql.Tx, keys []string, deltas []int64, lastHits []time.Time) (err error) {
 	stmt, err := tx.PrepareContext(ctx,
 		`UPDATE cache SET hits = hits + ?, last_hit_at = ? WHERE capture_id = ?`)
 	if err != nil {
@@ -117,21 +130,12 @@ func (c *sqliteCache) flushHits(ctx context.Context) (err error) {
 	}()
 	for i := range keys {
 		if _, execErr := stmt.ExecContext(ctx, deltas[i], lastHits[i].Unix(), keys[i]); execErr != nil {
-			if closeErr := stmt.Close(); closeErr != nil {
-				return errors.Join(
-					fmt.Errorf("update hit: %w", execErr),
-					fmt.Errorf("close hit stmt: %w", closeErr))
-			}
 			return fmt.Errorf("update hit: %w", execErr)
 		}
 	}
 	if closeErr := stmt.Close(); closeErr != nil {
 		return fmt.Errorf("close hit stmt: %w", closeErr)
 	}
-	if commitErr := tx.Commit(); commitErr != nil {
-		return fmt.Errorf("commit hit flush: %w", commitErr)
-	}
-	c.reconcileHits(keys, deltas)
 	return nil
 }
 

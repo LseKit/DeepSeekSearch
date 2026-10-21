@@ -34,17 +34,18 @@ const modulePath = "github.com/LseKit/DeepSeekSearch"
 
 // allowedImports 是包级的**项目内** import 白名单（与 Contract 10 §二、22 号 §2.1 三处同源）。
 var allowedImports = map[string][]string{
-	"internal/domain":     {}, // 零依赖
-	"internal/toolschema": {}, // 纯数据：MCP 工具 JSON Schema 字面量，零依赖
-	"internal/config":     {"internal/domain"},
-	"internal/logging":    {"internal/domain", "internal/config"},
-	"internal/deepseek":   {"internal/domain", "internal/config"},
-	"internal/resilience": {"internal/domain", "internal/config"},
-	"internal/health":     {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience"},
-	"internal/mcputil":    {"internal/domain"},
-	"internal/tools":      {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health", "internal/mcputil"},
-	"internal/transport":  {"internal/domain", "internal/config", "internal/logging"},
-	"cmd/deepseeksearch":  {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/tools", "internal/toolschema", "internal/health", "internal/mcputil", "internal/transport"},
+	"internal/domain":       {}, // 零依赖
+	"internal/toolschema":   {}, // 纯数据：MCP 工具 JSON Schema 字面量，零依赖
+	"internal/config":       {"internal/domain"},
+	"internal/logging":      {"internal/domain", "internal/config"},
+	"internal/deepseek":     {"internal/domain", "internal/config"},
+	"internal/resilience":   {"internal/domain", "internal/config"},
+	"internal/health":       {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience"},
+	"internal/mcputil":      {"internal/domain"},
+	"internal/toolvalidate": {"internal/domain"},
+	"internal/tools":        {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate"},
+	"internal/transport":    {"internal/domain", "internal/config", "internal/logging"},
+	"cmd/deepseeksearch":    {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/tools", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate", "internal/transport"},
 }
 
 // allowedExternal 是包级的**标准库 + 第三方**白名单（与 Contract 10 §2.1~2.8、22 号 §2.1 同源）。
@@ -86,6 +87,7 @@ var allowedExternal = map[string][]string{
 	"internal/mcputil": {
 		"encoding/json", "fmt", "strings", "github.com/modelcontextprotocol/go-sdk/mcp",
 	},
+	"internal/toolvalidate": {"fmt", "regexp", "strings", "time"},
 	"internal/health": {
 		"context", "crypto/sha256", "encoding/hex", "encoding/json", "fmt", "log/slog", "time",
 		"github.com/modelcontextprotocol/go-sdk/mcp",

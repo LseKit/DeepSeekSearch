@@ -8,9 +8,7 @@ package resilience
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -233,14 +231,8 @@ func (s *singleflight) lead(
 		if s.acquireOwnership(ctx, storageKey, userKey, current, fn, commit, finish) {
 			return
 		}
-		lease, found, readErr := s.leases.readLease(ctx, storageKey)
-		if readErr != nil {
-			s.logLeaseWarning("lease_read", readErr)
-			s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
-			return
-		}
-		if found && lease.LastErrorCode != 0 {
-			current.err = ownerFailedError(userKey, lease.LastErrorCode)
+		lease, found, done := s.readLeaseState(ctx, storageKey, userKey, current, fn, commit, finish)
+		if done {
 			return
 		}
 		if !found {
@@ -249,15 +241,8 @@ func (s *singleflight) lead(
 		if s.tryPreempt(ctx, storageKey, userKey, current, lease, fn, commit, finish) {
 			return
 		}
-		if time.Now().After(deadline) {
-			current.err = waitTimeoutError(userKey, waitMs)
+		if s.waitNextPoll(ctx, deadline, waitMs, userKey, current) {
 			return
-		}
-		select {
-		case <-ctx.Done():
-			current.err = fmt.Errorf("singleflight wait canceled: %w", ctx.Err())
-			return
-		case <-time.After(s.pollInterval):
 		}
 	}
 }
@@ -297,6 +282,39 @@ func (s *singleflight) acquireOwnership(
 		return true
 	}
 	return false
+}
+
+// readLeaseState 读租约；done=true 表示已结束（读失败或 owner 失败已写入 current）。
+func (s *singleflight) readLeaseState(
+	ctx context.Context, storageKey, userKey string, current *call,
+	fn func(context.Context) ([]byte, error), commit func(context.Context, []byte) error, finish func(),
+) (leaseRow, bool, bool) {
+	lease, found, readErr := s.leases.readLease(ctx, storageKey)
+	if readErr != nil {
+		s.logLeaseWarning("lease_read", readErr)
+		s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
+		return leaseRow{}, false, true
+	}
+	if found && lease.LastErrorCode != 0 {
+		current.err = ownerFailedError(userKey, lease.LastErrorCode)
+		return leaseRow{}, false, true
+	}
+	return lease, found, false
+}
+
+// waitNextPoll 等到下一次轮询；返回 true 表示已结束（超时或 ctx 取消）。
+func (s *singleflight) waitNextPoll(ctx context.Context, deadline time.Time, waitMs int, userKey string, current *call) bool {
+	if time.Now().After(deadline) {
+		current.err = waitTimeoutError(userKey, waitMs)
+		return true
+	}
+	select {
+	case <-ctx.Done():
+		current.err = fmt.Errorf("singleflight wait canceled: %w", ctx.Err())
+		return true
+	case <-time.After(s.pollInterval):
+		return false
+	}
 }
 
 // tryPreempt 处理租约过期抢占；返回 true 表示 lead 已结束。
@@ -496,120 +514,4 @@ func (s *singleflight) logWarn(event string, args ...any) {
 	if s.logger != nil {
 		s.logger.Warn(event, args...)
 	}
-}
-
-func (c *sqliteCache) cacheMaxEntryBytes() int64 {
-	return int64(c.cfg.CacheMaxEntryKB) * 1024
-}
-
-func (c *sqliteCache) searchTotalTimeoutMs() int { return c.cfg.TotalTimeoutSearchMs }
-
-func (c *sqliteCache) fetchTotalTimeoutMs() int { return c.cfg.TotalTimeoutFetchMs }
-
-func (c *sqliteCache) singleflightLogger() cacheLogger { return c.logger }
-
-func (c *sqliteCache) acquireLease(ctx context.Context, key, owner string, expiresAt int64) (bool, error) {
-	if c.closed.Load() {
-		return false, errCacheClosed
-	}
-	res, err := c.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO inflight (k, owner, expires_at, last_error_code) VALUES (?, ?, ?, 0)`,
-		key, owner, expiresAt)
-	if err != nil {
-		c.recordFailure(err)
-		return false, fmt.Errorf("acquire lease: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		c.recordFailure(err)
-		return false, fmt.Errorf("acquire lease rows affected: %w", err)
-	}
-	c.recordSuccess()
-	return affected == 1, nil
-}
-
-func (c *sqliteCache) preemptLease(ctx context.Context, key, owner string, expiresAt, now int64) (bool, error) {
-	if c.closed.Load() {
-		return false, errCacheClosed
-	}
-	res, err := c.db.ExecContext(ctx,
-		`UPDATE inflight SET owner = ?, expires_at = ?, last_error_code = 0
-         WHERE k = ? AND expires_at < ?`,
-		owner, expiresAt, key, now)
-	if err != nil {
-		c.recordFailure(err)
-		return false, fmt.Errorf("preempt lease: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		c.recordFailure(err)
-		return false, fmt.Errorf("preempt lease rows affected: %w", err)
-	}
-	c.recordSuccess()
-	return affected == 1, nil
-}
-
-func (c *sqliteCache) readLease(ctx context.Context, key string) (leaseRow, bool, error) {
-	if c.closed.Load() {
-		return leaseRow{}, false, errCacheClosed
-	}
-	var lease leaseRow
-	err := c.db.QueryRowContext(ctx,
-		`SELECT owner, expires_at, last_error_code FROM inflight WHERE k = ?`, key).
-		Scan(&lease.Owner, &lease.ExpiresAt, &lease.LastErrorCode)
-	if errors.Is(err, sql.ErrNoRows) {
-		c.recordSuccess()
-		return leaseRow{}, false, nil
-	}
-	if err != nil {
-		c.recordFailure(err)
-		return leaseRow{}, false, fmt.Errorf("read lease: %w", err)
-	}
-	c.recordSuccess()
-	return lease, true, nil
-}
-
-func (c *sqliteCache) markLeaseError(ctx context.Context, key, owner string, code int) error {
-	if c.closed.Load() {
-		return errCacheClosed
-	}
-	if _, err := c.db.ExecContext(ctx,
-		`UPDATE inflight SET last_error_code = ? WHERE k = ? AND owner = ?`,
-		code, key, owner); err != nil {
-		c.recordFailure(err)
-		return fmt.Errorf("mark lease error: %w", err)
-	}
-	c.recordSuccess()
-	return nil
-}
-
-func (c *sqliteCache) deleteLease(ctx context.Context, key, owner string) error {
-	if c.closed.Load() {
-		return errCacheClosed
-	}
-	if _, err := c.db.ExecContext(ctx,
-		`DELETE FROM inflight WHERE k = ? AND owner = ?`, key, owner); err != nil {
-		c.recordFailure(err)
-		return fmt.Errorf("delete lease: %w", err)
-	}
-	c.recordSuccess()
-	return nil
-}
-
-func (c *sqliteCache) releaseAllLeases(ctx context.Context, owner string) (int64, error) {
-	if c.closed.Load() {
-		return 0, errCacheClosed
-	}
-	res, err := c.db.ExecContext(ctx, `DELETE FROM inflight WHERE owner = ?`, owner)
-	if err != nil {
-		c.recordFailure(err)
-		return 0, fmt.Errorf("release all leases: %w", err)
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		c.recordFailure(err)
-		return 0, fmt.Errorf("release all leases rows affected: %w", err)
-	}
-	c.recordSuccess()
-	return affected, nil
 }

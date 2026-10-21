@@ -82,28 +82,9 @@ type RotatingWriter struct {
 // NewRotatingWriter 创建日志目录、打开今天的日志文件、执行一次启动清理，并拉起调度 goroutine。
 // Close 负责回收该 goroutine；调用方 MUST 在进程退出前调用 Close。
 func NewRotatingWriter(cfg Config) (*RotatingWriter, error) { //nolint:gocritic // 签名由 Task-04 A-01 固定
-	if cfg.Clock == nil {
-		return nil, fmt.Errorf("logging: Clock 未注入")
+	if err := prepareWriterConfig(&cfg); err != nil {
+		return nil, err
 	}
-	if cfg.TZ == nil {
-		return nil, fmt.Errorf("logging: TZ 未注入")
-	}
-	if cfg.Dir == "" {
-		return nil, fmt.Errorf("logging: Dir 不能为空")
-	}
-	if cfg.FilePrefix == "" {
-		cfg.FilePrefix = "DeepSeekSearch"
-	}
-	if strings.ContainsAny(cfg.FilePrefix, `/\`) || cfg.FilePrefix == "." || cfg.FilePrefix == ".." {
-		return nil, fmt.Errorf("logging: FilePrefix 不能包含路径分隔符")
-	}
-	if cfg.TsFormat == "" {
-		cfg.TsFormat = time.RFC3339
-	}
-	if err := os.MkdirAll(cfg.Dir, 0o750); err != nil {
-		return nil, fmt.Errorf("logging: 创建日志目录失败: %w", err)
-	}
-
 	w := &RotatingWriter{
 		cfg:           cfg,
 		clk:           cfg.Clock,
@@ -120,14 +101,47 @@ func NewRotatingWriter(cfg Config) (*RotatingWriter, error) { //nolint:gocritic 
 		return nil, fmt.Errorf("logging: 打开日志文件失败: %w", err)
 	}
 	w.curDate = now.Format(dateLayout)
-	removed, err := pruneByAge(cfg.Dir, cfg.FilePrefix, now, cfg.MaxAgeDays, cfg.MaxBackups, cfg.Compress)
-	if err != nil {
-		w.emitStderr(fmt.Sprintf("logging: 启动清理失败: %v\n", err))
-	} else if removed > 0 {
-		w.emitStderr(fmt.Sprintf("logging: 启动清理删除 %d 个旧日志文件\n", removed))
-	}
+	w.startupCleanup(now)
 	go w.schedule()
 	return w, nil
+}
+
+// prepareWriterConfig 校验必填项、补默认值并创建目录。
+func prepareWriterConfig(cfg *Config) error {
+	if cfg.Clock == nil {
+		return fmt.Errorf("logging: Clock 未注入")
+	}
+	if cfg.TZ == nil {
+		return fmt.Errorf("logging: TZ 未注入")
+	}
+	if cfg.Dir == "" {
+		return fmt.Errorf("logging: Dir 不能为空")
+	}
+	if cfg.FilePrefix == "" {
+		cfg.FilePrefix = "DeepSeekSearch"
+	}
+	if strings.ContainsAny(cfg.FilePrefix, `/\`) || cfg.FilePrefix == "." || cfg.FilePrefix == ".." {
+		return fmt.Errorf("logging: FilePrefix 不能包含路径分隔符")
+	}
+	if cfg.TsFormat == "" {
+		cfg.TsFormat = time.RFC3339
+	}
+	if err := os.MkdirAll(cfg.Dir, 0o750); err != nil {
+		return fmt.Errorf("logging: 创建日志目录失败: %w", err)
+	}
+	return nil
+}
+
+// startupCleanup 启动时清一次旧文件；失败只写 stderr，不阻塞启动。
+func (w *RotatingWriter) startupCleanup(now time.Time) {
+	removed, err := pruneByAge(w.cfg.Dir, w.cfg.FilePrefix, now, w.cfg.MaxAgeDays, w.cfg.MaxBackups, w.cfg.Compress)
+	if err != nil {
+		w.emitStderr(fmt.Sprintf("logging: 启动清理失败: %v\n", err))
+		return
+	}
+	if removed > 0 {
+		w.emitStderr(fmt.Sprintf("logging: 启动清理删除 %d 个旧日志文件\n", removed))
+	}
 }
 
 // Write 实现 io.Writer。它 MUST NEVER 向调用方返回日志写失败 —— 日志失败不该让业务失败。
@@ -138,28 +152,37 @@ func (w *RotatingWriter) Write(p []byte) (int, error) {
 	if w.closed || len(p) == 0 {
 		return len(p), nil
 	}
-
 	now := w.clk.Now().In(w.cfg.TZ)
-	if w.curDate != now.Format(dateLayout) {
-		if err := w.rotateDailyLocked(now, "daily"); err != nil {
-			w.emitStderr(fmt.Sprintf("logging: 跨日切分失败: %v\n", err))
-			w.droppedLines++
-			return len(p), nil
-		}
-	}
-	if w.dailyMaxBytes > 0 && w.dayBytes >= w.dailyMaxBytes {
-		w.dropLocked()
+	if !w.rotateIfNeeded(now, len(p)) {
 		return len(p), nil
-	}
-	if w.maxFileBytes > 0 && w.curBytes > 0 && w.curBytes+int64(len(p)) > w.maxFileBytes {
-		if err := w.rotateSizeLocked(now); err != nil {
-			w.emitStderr(fmt.Sprintf("logging: 单文件切分失败: %v\n", err))
-			w.droppedLines++
-			return len(p), nil
-		}
 	}
 	w.writeRawLocked(p)
 	return len(p), nil
+}
+
+// rotateIfNeeded 按跨日 / 日上限 / 单文件上限决定是否轮转；返回 false 表示本行被丢弃。
+func (w *RotatingWriter) rotateIfNeeded(now time.Time, n int) bool {
+	if w.curDate != now.Format(dateLayout) {
+		return w.rotateOrDrop("跨日", func() error { return w.rotateDailyLocked(now, "daily") })
+	}
+	if w.dailyMaxBytes > 0 && w.dayBytes >= w.dailyMaxBytes {
+		w.dropLocked()
+		return false
+	}
+	if w.maxFileBytes > 0 && w.curBytes > 0 && w.curBytes+int64(n) > w.maxFileBytes {
+		return w.rotateOrDrop("单文件", func() error { return w.rotateSizeLocked(now) })
+	}
+	return true
+}
+
+// rotateOrDrop 执行轮转；失败只打 stderr 并计入 droppedLines，绝不阻塞写日志。
+func (w *RotatingWriter) rotateOrDrop(reason string, rotate func() error) bool {
+	if err := rotate(); err != nil {
+		w.emitStderr(fmt.Sprintf("logging: %s切分失败: %v\n", reason, err))
+		w.droppedLines++
+		return false
+	}
+	return true
 }
 
 // Close 停止调度 goroutine、等待其退出并关闭当前文件；可重复调用（第二次返回 nil）。

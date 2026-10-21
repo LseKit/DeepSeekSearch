@@ -82,7 +82,12 @@ func handleFetch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp
 		return h.fromSnapshot(totalCtx)
 	}
 
-	normalized, normErr := domain.NormalizeUrl(params.URL, deps.Cfg.Dedupe.TrackingParams)
+	return h.fetchAndRender(totalCtx, ctx, &params)
+}
+
+// fetchAndRender 依次做 URL 归一、缓存回放、单飞抓取与渲染。
+func (h *fetchHandler) fetchAndRender(totalCtx, ctx context.Context, params *fetchParams) *mcp.CallToolResult {
+	normalized, normErr := domain.NormalizeUrl(params.URL, h.deps.Cfg.Dedupe.TrackingParams)
 	if normErr != nil {
 		normalized = params.URL
 	}
@@ -91,7 +96,6 @@ func handleFetch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp
 	if hit {
 		return h.renderAndFinish(&entry, true)
 	}
-
 	entry, shared, fetchErr := h.fetchEntry(totalCtx, entryKey, normalized, useSingleflight)
 	if fetchErr != nil {
 		mapped := h.mapInterrupted(ctx, totalCtx, fetchErr)

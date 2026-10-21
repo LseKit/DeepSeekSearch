@@ -21,6 +21,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
+	"github.com/LseKit/DeepSeekSearch/internal/toolvalidate"
 )
 
 const (
@@ -87,25 +88,8 @@ func validateFetch(in *fetchInput, cfg *config.Config) (fetchParams, error) {
 	if err := validateFetchExclusivity(rawURL, cacheID, params.NoCache); err != nil {
 		return params, err
 	}
-	if in.MaxChars != nil {
-		if *in.MaxChars < 0 || *in.MaxChars > fetchMaxCharsCap {
-			return params, invalid("max_chars", "必须在 0~200000 之间（0 表示使用配置默认值）")
-		}
-		if *in.MaxChars > 0 {
-			params.MaxChars = *in.MaxChars
-		}
-	}
-	if in.Unescape != nil {
-		params.Unescape = *in.Unescape
-	}
-	if in.Section != nil {
-		params.Section = *in.Section
-	}
-	if in.Sections != nil {
-		params.Sections = append([]string(nil), in.Sections...)
-	}
-	if params.Section != "" && len(params.Sections) > 0 {
-		return params, invalid("section/sections", "section 与 sections 只能二选一")
+	if err := applyFetchOptions(&params, in); err != nil {
+		return params, err
 	}
 	if rawURL != "" {
 		if err := validateFetchURL(rawURL, cfg); err != nil {
@@ -217,41 +201,41 @@ func parseHostIP(host string) (netip.Addr, bool) {
 		}
 		values[i] = value
 	}
-	number, ok := combineIPv4(values)
+	number, ok := toolvalidate.CombineIPv4(values)
 	if !ok {
 		return netip.Addr{}, false
 	}
-	return netip.AddrFrom4([4]byte{ //nolint:gosec // combineIPv4 已逐段校验范围，转换不会溢出
+	return netip.AddrFrom4([4]byte{
 		byte(number >> 24), byte(number >> 16), byte(number >> 8), byte(number), //nolint:gosec // 已逐段校验范围
 	}), true
 }
 
-func combineIPv4(values []uint64) (uint32, bool) {
-	switch len(values) {
-	case 1:
-		if values[0] > 0xFFFFFFFF {
-			return 0, false
+// applyFetchOptions 处理 max_chars/unescape/section(s) 四个可选参数。
+func applyFetchOptions(params *fetchParams, in *fetchInput) error {
+	if in.MaxChars != nil {
+		if *in.MaxChars < 0 || *in.MaxChars > fetchMaxCharsCap {
+			return invalid("max_chars", "必须在 0~200000 之间（0 表示使用配置默认值）")
 		}
-		return uint32(values[0]), true //nolint:gosec // 已校验 ≤0xFFFFFFFF
-	case 2:
-		if values[0] > 0xFF || values[1] > 0xFFFFFF {
-			return 0, false
+		if *in.MaxChars > 0 {
+			params.MaxChars = *in.MaxChars
 		}
-		return uint32(values[0]<<24 | values[1]), true //nolint:gosec // 已校验各段范围
-	case 3:
-		if values[0] > 0xFF || values[1] > 0xFF || values[2] > 0xFFFF {
-			return 0, false
-		}
-		return uint32(values[0]<<24 | values[1]<<16 | values[2]), true //nolint:gosec // 已校验各段范围
-	case 4:
-		if values[0] > 0xFF || values[1] > 0xFF || values[2] > 0xFF || values[3] > 0xFF {
-			return 0, false
-		}
-		return uint32(values[0]<<24 | values[1]<<16 | values[2]<<8 | values[3]), true //nolint:gosec // 已校验各段范围
-	default:
-		return 0, false
 	}
+	if in.Unescape != nil {
+		params.Unescape = *in.Unescape
+	}
+	if in.Section != nil {
+		params.Section = *in.Section
+	}
+	if in.Sections != nil {
+		params.Sections = append([]string(nil), in.Sections...)
+	}
+	if params.Section != "" && len(params.Sections) > 0 {
+		return invalid("section/sections", "section 与 sections 只能二选一")
+	}
+	return nil
 }
+
+// ipv4Widths 返回 2/3/4 段混淆写法每段的位宽（末段吃掉剩余位）。
 
 // snapshotID 绑定「一次具体抓取」而不是「一个 URL」。
 func snapshotID(rawURL string, capturedAt time.Time) string {
@@ -271,26 +255,32 @@ func lookupSnapshot(ctx context.Context, cache resilience.Cache, id string) (cac
 	if cache == nil {
 		return cachedFetchEntry{}, snapshotGoneError(id)
 	}
+	index, err := readSnapshotIndex(ctx, cache, id)
+	if err != nil {
+		return cachedFetchEntry{}, err
+	}
+	return readSnapshotEntry(ctx, cache, id, index)
+}
+
+func readSnapshotIndex(ctx context.Context, cache resilience.Cache, id string) (snapshotIndex, error) {
 	indexRaw, hit, err := cache.Get(ctx, snapshotIndexKey(id))
 	if err != nil {
-		return cachedFetchEntry{}, fmt.Errorf("read snapshot index: %w", err)
-	}
-	if !hit {
-		return cachedFetchEntry{}, snapshotGoneError(id)
+		return snapshotIndex{}, fmt.Errorf("read snapshot index: %w", err)
 	}
 	var index snapshotIndex
-	if json.Unmarshal(indexRaw, &index) != nil || index.CacheID != id || index.EntryKey == "" {
-		return cachedFetchEntry{}, snapshotGoneError(id)
+	if !hit || json.Unmarshal(indexRaw, &index) != nil || index.CacheID != id || index.EntryKey == "" {
+		return snapshotIndex{}, snapshotGoneError(id)
 	}
+	return index, nil
+}
+
+func readSnapshotEntry(ctx context.Context, cache resilience.Cache, id string, index snapshotIndex) (cachedFetchEntry, error) {
 	entryRaw, hit, err := cache.Get(ctx, index.EntryKey)
 	if err != nil {
 		return cachedFetchEntry{}, fmt.Errorf("read snapshot entry: %w", err)
 	}
-	if !hit {
-		return cachedFetchEntry{}, snapshotGoneError(id)
-	}
 	var entry cachedFetchEntry
-	if json.Unmarshal(entryRaw, &entry) != nil || entry.CacheID != id {
+	if !hit || json.Unmarshal(entryRaw, &entry) != nil || entry.CacheID != id {
 		return cachedFetchEntry{}, snapshotGoneError(id)
 	}
 	return entry, nil

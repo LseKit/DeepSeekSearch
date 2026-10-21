@@ -11,11 +11,11 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/toolvalidate"
 )
 
 type searchParams struct {
@@ -43,12 +43,10 @@ type searchParams struct {
 }
 
 var (
-	datePattern  = regexp.MustCompile(`^\d{4}(-\d{2}-\d{2})?$`)
 	labelPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 )
 
 // ISO 639-1 全量码表；未知码只记 warning，不拒绝。
-const iso6391Codes = " aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu cv cy da de dv dz ee el en eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi vo wa wo xh yi yo za zh zu "
 
 type namedString struct {
 	name  string
@@ -84,26 +82,8 @@ func validateSearch(in *searchInput, cfg *config.Config) (searchParams, error) {
 	if err := validateQuery(in.Query); err != nil {
 		return params, err
 	}
-	if in.Count != nil {
-		params.Count = *in.Count
-	}
-	if params.Count < 1 || params.Count > 50 {
-		return params, validationErr(domain.CodeValCountRange, "count", "必须在 1~50 之间")
-	}
-	if in.Detail != nil {
-		params.Detail = *in.Detail
-	}
-	if !validDetail(params.Detail) {
-		return params, invalid("detail", "必须是 minimal/snippet/summary/content 之一")
-	}
-	if in.NeedContent != nil {
-		params.NeedContent = *in.NeedContent
-	}
-	if params.NeedContent {
-		params.Detail = "content"
-	}
-	if params.Detail == "content" {
-		params.NeedContent = true
+	if err := applySearchPaging(&params, in); err != nil {
+		return params, err
 	}
 	if err := validateOptionalText(&params, in); err != nil {
 		return params, err
@@ -118,6 +98,32 @@ func validateSearch(in *searchInput, cfg *config.Config) (searchParams, error) {
 		return params, validationErr(domain.CodeValSynthDisabled, "synthesize", "阶段一不支持答案合成")
 	}
 	return buildEffectiveQuery(&params)
+}
+
+// applySearchPaging 处理 count/detail/need_content 三者的联动。
+func applySearchPaging(params *searchParams, in *searchInput) error {
+	if in.Count != nil {
+		params.Count = *in.Count
+	}
+	if params.Count < 1 || params.Count > 50 {
+		return validationErr(domain.CodeValCountRange, "count", "必须在 1~50 之间")
+	}
+	if in.Detail != nil {
+		params.Detail = *in.Detail
+	}
+	if !validDetail(params.Detail) {
+		return invalid("detail", "必须是 minimal/snippet/summary/content 之一")
+	}
+	if in.NeedContent != nil {
+		params.NeedContent = *in.NeedContent
+	}
+	if params.NeedContent {
+		params.Detail = "content"
+	}
+	if params.Detail == "content" {
+		params.NeedContent = true
+	}
+	return nil
 }
 
 func defaultCount(cfg *config.Config) int {
@@ -204,19 +210,41 @@ func searchStringFields(in *searchInput) []namedString {
 }
 
 func validateOptionalText(params *searchParams, in *searchInput) error {
-	if in.OriQuestion != nil && *in.OriQuestion != "" {
-		if utf8.RuneCountInString(*in.OriQuestion) > 128 {
-			return invalid("ori_question", "长度不能超过 128 rune")
-		}
-		value := *in.OriQuestion
-		params.OriQuestion = &value
+	if err := applyOriQuestion(params, in.OriQuestion); err != nil {
+		return err
 	}
-	if in.Localization != nil && *in.Localization != "" {
-		if _, err := netip.ParseAddr(*in.Localization); err != nil {
-			return invalid("localization", "必须是合法的 IPv4 或 IPv6 地址")
-		}
-		params.Localization = *in.Localization
+	if err := applyLocalization(params, in.Localization); err != nil {
+		return err
 	}
+	if err := applyDates(params, in); err != nil {
+		return err
+	}
+	return applyExactPhrase(params, in.ExactPhrase)
+}
+
+func applyOriQuestion(params *searchParams, value *string) error {
+	if value == nil || *value == "" {
+		return nil
+	}
+	if utf8.RuneCountInString(*value) > 128 {
+		return invalid("ori_question", "长度不能超过 128 rune")
+	}
+	params.OriQuestion = value
+	return nil
+}
+
+func applyLocalization(params *searchParams, value *string) error {
+	if value == nil || *value == "" {
+		return nil
+	}
+	if _, err := netip.ParseAddr(*value); err != nil {
+		return invalid("localization", "必须是合法的 IPv4 或 IPv6 地址")
+	}
+	params.Localization = *value
+	return nil
+}
+
+func applyDates(params *searchParams, in *searchInput) error {
 	dates := []struct {
 		field string
 		in    *string
@@ -229,24 +257,22 @@ func validateOptionalText(params *searchParams, in *searchInput) error {
 		if date.in == nil || *date.in == "" {
 			continue
 		}
-		if !validDate(*date.in) {
+		if !toolvalidate.ValidDate(*date.in) {
 			return validationErr(domain.CodeValDateFormat, date.field, "必须是 YYYY 或 YYYY-MM-DD 且日期合法")
 		}
 		*date.out = *date.in
 	}
-	if in.ExactPhrase != nil && *in.ExactPhrase != "" {
-		if err := validatePhrase("exact_phrase", *in.ExactPhrase); err != nil {
-			return err
-		}
-		params.ExactPhrase = *in.ExactPhrase
-	}
 	return nil
 }
 
-func validatePhrase(field, value string) error {
-	if strings.Contains(value, `"`) || strings.TrimSpace(value) != value {
-		return invalid(field, "不能包含英文双引号或首尾空白")
+func applyExactPhrase(params *searchParams, value *string) error {
+	if value == nil || *value == "" {
+		return nil
 	}
+	if err := toolvalidate.ValidatePhrase("exact_phrase", *value); err != nil {
+		return fmt.Errorf("exact_phrase: %w", err)
+	}
+	params.ExactPhrase = *value
 	return nil
 }
 
@@ -264,8 +290,8 @@ func validateCollections(params *searchParams, in *searchInput) error {
 		if term == "" {
 			continue
 		}
-		if err := validatePhrase("exclude_terms", term); err != nil {
-			return err
+		if err := toolvalidate.ValidatePhrase("exclude_terms", term); err != nil {
+			return fmt.Errorf("exclude_terms: %w", err)
 		}
 		terms = append(terms, term)
 	}
@@ -298,19 +324,21 @@ func validDomain(value string) bool {
 	return true
 }
 
-func validDate(value string) bool {
-	if !datePattern.MatchString(value) {
-		return false
+func validateFilters(params *searchParams, in *searchInput) error {
+	if err := applyMinFilters(params, in); err != nil {
+		return err
 	}
-	layout := "2006"
-	if len(value) == len("2006-01-02") {
-		layout = "2006-01-02"
+	if err := applyDomainQuota(params, in); err != nil {
+		return err
 	}
-	_, err := time.Parse(layout, value)
-	return err == nil
+	if in.RawQuery != nil {
+		params.RawQuery = *in.RawQuery
+	}
+	params.Lang, params.Warnings = toolvalidate.NormalizeLangs(in.Lang, params.Warnings)
+	return nil
 }
 
-func validateFilters(params *searchParams, in *searchInput) error {
+func applyMinFilters(params *searchParams, in *searchInput) error {
 	if in.MinRerank != nil {
 		if *in.MinRerank < 0 || *in.MinRerank > 3 {
 			return invalid("min_rerank", "必须在 0~3 之间")
@@ -323,33 +351,17 @@ func validateFilters(params *searchParams, in *searchInput) error {
 		}
 		params.MinAuthority = in.MinAuthority
 	}
+	return nil
+}
+
+func applyDomainQuota(params *searchParams, in *searchInput) error {
 	if in.MaxPerDomain != nil {
 		params.MaxPerDomain = *in.MaxPerDomain
 	}
 	if params.MaxPerDomain < 1 || params.MaxPerDomain > 10 {
 		return invalid("max_per_domain", "必须在 1~10 之间")
 	}
-	if in.RawQuery != nil {
-		params.RawQuery = *in.RawQuery
-	}
-	params.Lang, params.Warnings = normalizeLangs(in.Lang, params.Warnings)
 	return nil
-}
-
-func normalizeLangs(langs, warnings []string) (out, outWarnings []string) {
-	out = make([]string, 0, len(langs))
-	outWarnings = warnings
-	for _, lang := range langs {
-		code := strings.ToLower(strings.TrimSpace(lang))
-		if code == "" {
-			continue
-		}
-		if !strings.Contains(iso6391Codes, " "+code+" ") {
-			outWarnings = append(outWarnings, "lang:"+code+" 不是常见的 ISO 639-1 语言码，已按原样发送")
-		}
-		out = append(out, code)
-	}
-	return out, outWarnings
 }
 
 func buildEffectiveQuery(params *searchParams) (searchParams, error) {
