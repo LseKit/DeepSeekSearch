@@ -113,13 +113,14 @@ go test ./... -count=1                                # 全量（禁缓存）
 ```
 GitHubSrc/
 ├── cmd/deepseeksearch/     装配。唯一 os.Exit 的地方
-├── internal/domain/        纯类型 + 41 个错误码 + 纯函数。零内部依赖
+├── internal/domain/        纯类型 + 42 个错误码 + 纯函数。零内部依赖
 ├── internal/config/        toml + dotenv + env 合并，校验
 ├── internal/logging/       slog + 自研日轮转
 ├── internal/deepseek/      上游 HTTP 客户端（一次往返 + 解析，不重试不缓存）
 ├── internal/resilience/    限流 / 重试 / 预算 / 熔断 / 缓存 / singleflight
 ├── internal/tools/         MCP 工具：校验 + 编排 + 渲染
 ├── internal/transport/     stdio + Streamable HTTP + 中间件链
+├── internal/toolschema/    工具 JSON Schema 字面量（纯数据叶子包，零依赖）
 ├── internal/arch_test.go   架构守护测试
 ├── Scripts/                CheckSize / CheckDocDrift / SyncDocs / Release
 └── docs/                   从 ../Doc 单向同步，MUST NOT 手写
@@ -525,7 +526,7 @@ git status --short         # 确认没多出文件
 | 中文末尾出现 `�` | 按 byte 切片 | `domain.SliceByRune` |
 | 代码块里的 `\n` 变真换行 | 反转义时删了所有反斜杠 | 只反转义实测全集 **32** 个字符（原 11 字符表漏了 21 种，ADR-013）；且 MUST 单趟替换，多趟会把嵌套转义 `\\\.` 过度还原 |
 | 改配置不生效 | 优先级顺序反了 / `toml` tag 拼错 | `Config.Source(key)` 打印来源 |
-| 反代 / 直连局域网后全部 403 | 两层各查各的：`hostGuard` 查 **Host 头**（`3093`）；SDK 的 DNS 重绑定防护查「**本连接本地地址是回环** + Host 非回环」 | 反代或 `host="0.0.0.0"`：`allow_non_local_host=true` **且** `auth_enabled=true`；反代到回环监听且转发原始 Host：再加 `disable_localhost_protection=true` |
+| 反代 / 直连局域网后全部 403 | 两层各查各的：`hostGuard` 查 **Host 头**（`3093`）；SDK 的 DNS 重绑定防护查「**本连接本地地址是回环** + Host 非回环」 | 反代或 `host="0.0.0.0"`：`allow_non_local_host=true`（是否鉴权由 `auth_enabled` 单独决定，ADR-018）；反代到回环监听且转发原始 Host：再加 `disable_localhost_protection=true` |
 
 ---
 

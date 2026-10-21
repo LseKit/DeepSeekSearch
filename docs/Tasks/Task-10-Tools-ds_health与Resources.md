@@ -139,14 +139,14 @@ $ go test ./internal/tools/ -v -run TestHealth
 
 ### 1 上下文（自包含）
 
-为什么错误码表放 Resource 不放 tool description：41 个码 + hint 约 1,500 token，而 `tools/list` 每次调用都会返回 description。放进 Resource 后 description 只需 3 条行为规则（约 120 token），**省 92%**。而且模型只在真正出错时才需要读码表。
+为什么错误码表放 Resource 不放 tool description：42 个码 + hint 约 1,500 token，而 `tools/list` 每次调用都会返回 description。放进 Resource 后 description 只需 3 条行为规则（约 120 token），**省 92%**。而且模型只在真正出错时才需要读码表。
 
 三个 Resource（🔴 URI / MIME / `ttlMs` / `cacheScope` 的**唯一真源是 `Contract/14-错误契约.md` §五**，本表只是摘要，改动 MUST 先改那边）：
 
 | URI | 内容 | 大小 | `ttlMs` | `cacheScope` |
 |---|---|:-:|:-:|:-:|
 | `ds://effective-config` | 脱敏后的生效配置 + 每个值的来源层级 + `config_sha256` | ~3KB | `300000` | `private` |
-| `ds://error-codes` | 41 个错误码全表（code/name/message/hint/retryable） | ~4KB | `300000` | `public` |
+| `ds://error-codes` | 42 个错误码全表（code/name/message/hint/retryable） | ~4KB | `300000` | `public` |
 | `ds://usage` | 本次进程生命周期内的调用统计（按工具、按小时） | ~1KB | `1000` | `private` |
 
 ### 2 要创建的文件
@@ -185,7 +185,7 @@ $ go test ./internal/tools/ -v -run TestHealth
 
 ```go
 // registerResources 注册三个只读 Resource。
-// 错误码表放这里而不是 tool description：41 个码约 1500 token，
+// 错误码表放这里而不是 tool description：42 个码约 1500 token，
 // 而 tools/list 每次都要付；放 Resource 后 description 只要 120 token。
 func registerResources(srv *mcp.Server, deps Deps) error
 

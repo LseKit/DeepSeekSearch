@@ -7,7 +7,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 目标 | 把 `deepseek.Client.Search` 包装成 MCP 工具，含 18 个参数的 schema、本地校验、语法拼装、去重、`detail` 分级、预算截断、错误体 |
+| 目标 | 把 `deepseek.Client.Search` 包装成 MCP 工具，含 19 个参数的 schema、本地校验、语法拼装、去重、`detail` 分级、预算截断、错误体 |
 | 依赖 | Task-02 ~ Task-07 全部 |
 | 产出 | `internal/tools` 覆盖率 ≥ 70%；`tools/list` 顺序确定；同一入参两次调用 schema 字节相同 |
 | 必读 | `Contract/12-数据契约` §4.1、§4.1.1、§八、§九、§十；`Contract/14-错误契约` §三 §四；`Contract/15-协议契约` §七之二 |
@@ -30,7 +30,7 @@
 
 `ds_search` 是模型最常调的工具，它的 description 直接影响模型行为。五条硬规则：
 
-1. **description 里不放错误码表**（41 个码 ≈ 1,500 token，每次 `tools/list` 都付费）。只放 §5 骨架里的 4 条行为规则（≈160 token）。
+1. **description 里不放错误码表**（42 个码 ≈ 1,500 token，每次 `tools/list` 都付费）。只放 §5 骨架里的 4 条行为规则（≈160 token）。
 2. **`ori_question` 的说明里 MUST NOT 写「能提升查询理解」** —— 实测 4 组里 3 组结果字节级相同（见 `12-数据契约` §4.1.1）。
 3. **默认 `detail=summary`** —— 实测 summary 是 query 定向摘要（同一 URL 在三个 query 下给 967/105/514 字），一次调用就能支撑回答，省掉一次 fetch 往返与 ¥0.005。
 4. 🔴 **`after` 的参数级 description MUST 写入年份语义陷阱**：上游 `after:YYYY` 的语义是「**晚于**该年」= ≥(YYYY+1)-01-01，不是「该年起」。实测 `after:2026` 对 2026-10 的内容返回 **0 条**（23 号 §3.2.1）。`BuildQuery` MUST 把裸年份展开为 `YYYY-01-01`，展开动作 MUST 记入 `warnings[]` 与 `query_effective`。
@@ -66,7 +66,7 @@
 | 9 | 🔴 `min_rerank` 的参数 description MUST 警告：「1.5 是热门 query 的优质线；冷门/专业/小语种 query 的正常结果普遍低于 1.5，设置该值可能返回 0 条，不确定时不要传」。依据：实测 5 个冷门 query 中 4 个的**全部**结果 <1.5，最低 0.196（23 号 §3.3.1）—— 官方「≥1.5 为优质」的说法是错的，MUST NOT 照抄。`min_authority` 同理带警告（authority=1 在冷门 query 占 19/20，23 号 §3.3.1） |
 | 10 | 🔴 nullable 参数（`min_rerank` / `min_authority`）的 JSON Schema 表达**定死**：本项目禁用 `anyOf`/`oneOf`（部分客户端不支持），`"type":["number","null"]` 类型数组同样不支持 ⇒ schema 里写 `min_rerank: "type":"number"`、`min_authority: "type":"integer"`（**不带 null**），用 description 明确「**不传 = 关闭过滤；不要用 0 来表示关闭**」。运行时收到显式 `null` 按缺失处理。理由：实测 `authority` 可为 1、`rerank_score` 可低至 0.196（23 号 §3.3/§3.3.1），0 是**合法阈值**，把 0 当「关闭」会误触发过滤 |
 
-**18 个参数（逐字照抄，顺序即 schema 里的顺序）**：
+**19 个参数（逐字照抄，顺序即 schema 里的顺序）**：
 
 | # | 参数 | 类型 | 必填 | 默认 | 约束 |
 |:-:|---|---|:-:|---|---|
@@ -87,7 +87,8 @@
 | 15 | `min_authority` | integer | | null | 0~4，本地过滤（默认关） |
 | 16 | `max_per_domain` | integer | | 3 | 1~10 |
 | 17 | `raw_query` | boolean | | false | true 时完全绕过语法拼装 |
-| 18 | `synthesize` | boolean | | false | 阶段二能力。传 true 返回 `1095 VAL_SYNTH_DISABLED` |
+| 18 | `no_cache` | boolean | | false | true 时跳过读缓存并真实调用上游，结果仍写回缓存 |
+| 19 | `synthesize` | boolean | | false | 阶段二能力。传 true 返回 `1095 VAL_SYNTH_DISABLED` |
 
 > 这张表与 `Contract/12-数据契约.md` §4.1 **必须逐字相同**。改一处 MUST 同时改另一处，`Scripts/CheckDocDrift.sh` 会比对参数名集合。
 
@@ -170,6 +171,10 @@ const searchInputSchemaJSON = `{
       "type": "boolean", "default": false,
       "description": "true 时完全绕过语法拼装，query 原样发给上游（自行负责 site:/after: 等操作符语法）。"
     },
+    "no_cache": {
+      "type": "boolean", "default": false,
+      "description": "true 时跳过读缓存、真实调用上游（必定计费），但结果仍写入缓存供他人命中。"
+    },
     "synthesize": {
       "type": "boolean", "default": false,
       "description": "本版本不支持，传 true 会返回 1095。"
@@ -217,7 +222,7 @@ const searchInputSchemaJSON = `{
 
 ```go
 // searchDescription 只放「模型不知道就会做错」的规则（4 条，≈160 token）。
-// 错误码表放 Resource ds://error-codes —— 41 个码塞进来约 1500 token，
+// 错误码表放 Resource ds://error-codes —— 42 个码塞进来约 1500 token，
 // 每次 tools/list 都要付。两个实测陷阱（after 年份展开、min_rerank 长尾清空）
 // 写在对应参数的 schema description 里（§3.2.1 字面量），不占工具级 description。
 const searchDescription = `搜索网页并返回排序后的结果列表。上游已按 rerank_score 降序，不要自己重排。

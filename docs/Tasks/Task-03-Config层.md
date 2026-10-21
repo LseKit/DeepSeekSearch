@@ -250,7 +250,7 @@ $ go test ./internal/config/ -v -run TestLoad
 
 ### 1 上下文（自包含）
 
-`13-配置契约` §1.1 列了启动时强制检查的 7 件事。第 6 条（未知键）在 A-02 已做。本任务做剩下的 6 条 + 跨字段一致性校验（如 `host=0.0.0.0` 必须配 `auth_enabled=true`）。
+`13-配置契约` §1.1 列了启动时强制检查的 7 件事。第 6 条（未知键）在 A-02 已做。本任务做剩下的 6 条 + 跨字段一致性校验（如 `max_inflight` 与两份配额的一致性）。⚠️ 2026-10-21 ADR-018 起，`host=0.0.0.0` 不再强制 `auth_enabled`，改为启动 warning `3092`。
 
 **为什么这么严**：上游 DeepSeek 会静默忽略未知字段（实测）。我们绝不在自己的配置上重犯同一个错 —— 写错参数名必须当场报错，不能装作没看见。
 
@@ -269,7 +269,7 @@ $ go test ./internal/config/ -v -run TestLoad
 | 5 | 数值区间：`port 1~65535`、`count 1~50`、`rps > 0`、🔴 `max_inflight **3**~64`、`max_wait_ms 1~300000`、`max_attempts 1~6`、`summary_chars ≥ 0` | `3090` |
 | 5.1 | 🔴 **新增键 `ratelimit.search_share`：0 < x < 1（开区间）**。0 或 1 都说明用户误解了这个键（两端各有 `max(1,·)` / `max(2,·)` 兜底，填边界值等于没填）。完整区间清单 MUST 逐条对齐 `13-配置契约` §1.1.2 —— 那里是穷举表（20 余行），本行只是摘要 | `3090` |
 | 6 | `Asia/Shanghai` 可加载（`domain` 包已 panic，这里只做 preflight 提示） | `3090` |
-| 7 | 🔴 跨字段：`host == "0.0.0.0"` 或 `allow_non_local_host == true` → 必须 `auth_enabled == true` | `3092` |
+| 7 | 跨字段（ADR-018 后降为 warning）：`host == "0.0.0.0"` 或 `allow_non_local_host == true` 且 `auth_enabled == false` → 启动 warning `3092`，**不阻断** | `3092` |
 | 8 | 跨字段：`per_attempt_ms × max_attempts + Σ(fixed_ms + spread_ms) ≤ total_timeout_ms`。🔴 **search 与 fetch 各自校验**（原设计只写了 fetch；search 的 `max_attempts` 默认是 **4**，漏检会让 search 的重试永远跑不完。默认值：`12000×4+19000=67000`，故 `total_timeout_ms` 默认 MUST 为 67000） | `3090` |
 | 9 | 跨字段：`fetch.per_attempt_ms > 31000`（必须大于上游 30s 网关超时） | `3090` |
 | 10 | 跨字段：`total_timeout_ms ≤ 115000`（必须小于 Hermes 120s） | `3090`（warning 而非 error，允许用户明确接受超时风险） |
@@ -307,17 +307,16 @@ func (c Config) Validate() (warnings []string, err error) {
     return c.collectWarnings(), errors.Join(errs...)
 }
 
-// validateServer 检查「暴露面与安全」的交叉约束。
-// 独立成函数是因为这是唯一会出现「两个字段必须联动」的地方，
-// 混在通用枚举检查里会看不清为什么报错。
-func (c *Config) validateServer() []error {
-    var errs []error
-    // 裸奔检查：监听外网 + 不鉴权 = 任何人连上都能花你的钱
+// collectWarnings 收集「不阻断启动但必须让人看见」的配置组合。
+// 🔴 ADR-018：暴露 + 不鉴权从「validateServer 返回 error」改为这里产出一条 warning。
+//    原因：auth_enabled 的两种取值原本只有一种能生效（假开关），
+//    而暴露面的取舍权应由配置者持有，系统只负责留痕。
+func (c *Config) collectWarnings() []string {
+    // 裸奔提示：监听外网 + 不鉴权 = 任何能连上的人都能花你的钱
     if (c.Server.Http.Host == "0.0.0.0" || c.Server.Http.AllowNonLocalHost) && !c.Server.Http.AuthEnabled {
-        errs = append(errs, configErr(domain.CodeLocHTTPExposedNoAuth,
-            "server.http: host=0.0.0.0 或 allow_non_local_host=true 时必须 auth_enabled=true"))
+        warnings = append(warnings, "server.http: host=0.0.0.0 或 allow_non_local_host=true 且 auth_enabled=false —— 任何能连上该端口的人都能花你的钱（3092）")
     }
-    return errs
+    return warnings
 }
 ```
 
@@ -329,7 +328,7 @@ func (c *Config) validateServer() []error {
 | `transport = "http"`（旧写法） | error 含 `streamable-http` |
 | `rps = 0` | error 含 `ratelimit.search.rps` |
 | `port = 70000` | error 含 `server.http.port` |
-| `host=0.0.0.0` + `auth_enabled=false` | error 含 `3092` 语义 |
+| `host=0.0.0.0` + `auth_enabled=false` | **warning 含 `3092` 语义，`Validate()` 不返回 error**（ADR-018） |
 | `host=0.0.0.0` + `auth_enabled=true` + token 空 | error 含 `3041` |
 | 两个错误同时存在 | 一次返回 2 条 |
 

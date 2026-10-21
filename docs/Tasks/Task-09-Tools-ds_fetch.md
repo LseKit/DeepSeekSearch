@@ -50,8 +50,8 @@
 
 | # | 要求 |
 |:-:|---|---|
-| 1 | 🔴 **参数恰好 6 个**：`url` `cache_id` `section` `sections` `max_chars` `unescape` |
-| 2 | `no_cache` **不在其中**。它是阶段二能力（DEBT-003），阶段一的 schema MUST NOT 出现该字段名 —— `91-验收总表` 09-A01-6 明确要求「schema 里不存在」。旧文档在同一张表里先说「7 个」再说「实际 6 个」，对执行窗口是高风险指令污染，已删 |
+| 1 | 🔴 **参数恰好 7 个**：`url` `cache_id` `section` `sections` `max_chars` `unescape` `no_cache`（`no_cache` 与 `cache_id` 同传 MUST 拒绝） |
+| 2 | `no_cache` 已按 DEBT-003 落地（2026-10-21）：`true` 时跳过读缓存但写回；与 `cache_id` 同传 MUST 拒绝（`cache_id` 本身就是读缓存） |
 | 3 | `url` 与 `cache_id` 二选一（`anyOf` 禁用 → 用两个可选字段 + 运行时校验） |
 | 4 | `max_chars` 1~200000，默认 32000（0 = 用配置默认值） |
 | 5 | `unescape` 默认 **true** |
@@ -95,7 +95,7 @@
 | 2 | MUST NOT 允许 `file://` / `gopher://` / `data:` |
 | 3 | MUST NOT 让 `cache_id` = hash(url) |
 | 4 | MUST NOT 加 `offset` 参数（上游不支持，见 `16-技术债` S2） |
-| 5 | MUST NOT 加 `no_cache` 参数（DEBT-003，阶段二） |
+| 5 | `no_cache=true` MUST NOT 读缓存、MUST NOT 参与 singleflight，且结果 MUST 写回缓存 |
 | 6 | 🔴 MUST NOT 把 URL 原文写进任何日志字段 —— query 值 MUST 先经 `domain.RedactURL` 按 `log.redact_query_keys` 脱敏（§3.2 第 8.1/8.2 条）。这条对 `ssrf.blocked`、`call.begin`、`call.upstream` 与错误上下文**一律适用**，不存在「只在被拦的时候脱敏」这种半套做法 |
 
 ### 5 参考骨架

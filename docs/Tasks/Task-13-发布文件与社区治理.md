@@ -255,7 +255,7 @@ DeepSeek 按次计费：**¥5 / 1000 次**，Search 与 Fetch 各自计算。
 - 健康检查端点 `/healthz`（与 MCP 同端口，免鉴权）
 - 缓存：SQLite（WAL）+ 跨进程 singleflight，防止并发重复计费
 - 韧性：per-key 令牌桶、抖动重试、重试预算、连续失败熔断、三层预算硬顶
-- MCP Resource：`ds://error-codes`（41 个错误码）、`ds://effective-config`（脱敏配置）、`ds://usage`（调用统计）
+- MCP Resource：`ds://error-codes`（42 个错误码）、`ds://effective-config`（脱敏配置）、`ds://usage`（调用统计）
 - 安全：SSRF 私网黑名单（8 网段 + 3 种 IP 混淆）、Origin 校验、可选 Bearer 鉴权、常量时间比较
 - 版本号：编译期 `-ldflags` 注入，`--version` / `serverInfo.version` / `/healthz` 三处同源
 
@@ -361,7 +361,7 @@ DeepSeek 按次计费：**¥5 / 1000 次**，Search 与 Fetch 各自计算。
 | 项 | 实现 |
 |---|---|
 | 密钥隔离 | `Config/.env`（权限 600），`config.toml` 出现密钥类键名直接拒绝启动 |
-| 暴露保护 | `host` 非回环 或 `allow_non_local_host=true` 时，必须 `auth_enabled=true`，否则拒绝启动（错误码 `3092`） |
+| 暴露保护 | 暴露（`host` 非回环或 `allow_non_local_host=true`）时鉴权可选；`auth_enabled=false` 时启动打 `3092` warning（ADR-018），不拒绝启动 |
 | 请求校验 | Origin 白名单 + Host 校验 + 请求体大小上限 |
 | 日志脱敏 | API Key / token 永不进日志；配置输出前先 `Redacted()` |
 | 二进制 | `CGO_ENABLED=0` 静态编译，发布附带 `SHA256SUMS` |

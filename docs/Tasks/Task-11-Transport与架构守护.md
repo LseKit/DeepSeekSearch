@@ -148,7 +148,7 @@ $ go test ./internal/transport/ -v -run 'TestBuild|TestAvailable|TestStdio'
 🔴 **中间件顺序固定（C10 裁决后）**：
 
 ```
-recover → accessLog → securityHeaders → healthz → crossOrigin → hostGuard → authGuard → bodyLimit → mcp
+recover → accessLog → securityHeaders → healthz → admission → crossOrigin → hostGuard → authGuard → bodyLimit → mcp
 ```
 
 > **原顺序是 `… healthz → hostGuard → authGuard → crossOrigin → bodyLimit → mcp`，并标注「MUST NOT 调换」。它是错的，而且错在「auth_enabled=true 时任何浏览器端 MCP 客户端都不可用」这个量级上。**
@@ -253,7 +253,7 @@ func chain(cfg config.Config, log *slog.Logger, mcpHandler http.Handler) http.Ha
 // middlewareNames 供 TestMiddlewareOrder 断言实际顺序。
 // 与 chain 的包装顺序一一对应，改 chain MUST 同时改这里。
 var middlewareNames = []string{
-    "recover", "accessLog", "securityHeaders", "healthz",
+    "recover", "accessLog", "securityHeaders", "healthz", "admission",
     "crossOrigin", "hostGuard", "authGuard", "bodyLimit", "mcp",
 }
 ```

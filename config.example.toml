@@ -61,6 +61,13 @@ json_response = true
 # 我们的请求体很小（几百字节），1048576（1MB）已经非常宽松。
 max_request_body_bytes = 1048576
 
+# HTTP 入口的并发上限（保护进程与余额）。
+#   64（默认）—— 同时在处理的请求上限；超出的请求立即返回 429（3094），不排队。
+#   0          —— 不限。⚠️ 无鉴权部署下这等于把并发交给调用方决定。
+# 为什么在入口限：`ratelimit` 拦的是「发往上游的调用」，请求体解析、鉴权、
+# 排队等入口成本它管不到；无鉴权暴露时，一个客户端就能把 goroutine 堆满。
+max_concurrent_requests = 64
+
 # 🔴 原有的 session_timeout_s = 300（「空闲会话超时」）**已整键移除**，理由与
 #    [hedge] 完全同型：ADR-003 决定 Streamable HTTP **只做无状态、且配置里不出现
 #    任何 mode/stateless 字段**，所以这个键**永不生效**。原注释「无状态模式下基本
@@ -102,12 +109,11 @@ allow_non_local_host = false
 healthz_path = "/healthz"
 
 # HTTP 传输的 Bearer 鉴权。
-#   false（默认）—— 不鉴权。只在 host = "127.0.0.1" 且不做反代时才可以这样。
+#   false（默认）—— 不鉴权。
 #   true          —— 要求请求头带 Authorization: Bearer <token>。
 #                   token 从 .env 的 DEEPSEEKSEARCH_HTTP_TOKEN 读取（不放本文件）。
-# 🔴 铁律：host 改成 "0.0.0.0" 或 allow_non_local_host = true 时，
-#          本项必须为 true，否则程序拒绝启动（错误码 3092）。
-# 为什么：不鉴权就等于任何人连上都能花你的钱。
+# 本项是**唯一**的鉴权开关（ADR-018）：暴露到网络时也能为 false，但启动期会打
+# 3092 警告 —— 不鉴权就等于任何能连上的人都能花你的钱。
 auth_enabled = false
 
 # 鉴权 token 的环境变量名。一般不改。

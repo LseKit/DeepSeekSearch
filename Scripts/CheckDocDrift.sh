@@ -148,7 +148,7 @@ done
 # ---------------------------------------------------------------- 检查 4
 say ""
 say "[4/8] 包白名单两处一致（Contract/10 与 Engineering/22）"
-A=$(grep -oP '^### 2\.[0-9] `internal/\K[a-z]+' "$DOC_DIR/Contract/10-包依赖矩阵.md" | sort -u)
+A=$(grep -oP '^### 2\.[0-9.]+ `internal/\K[a-z]+' "$DOC_DIR/Contract/10-包依赖矩阵.md" | sort -u)
 B=$(grep -oP '^\s+"internal/\K[a-z]+(?=")' "$DOC_DIR/Engineering/22-架构守护规则.md" | sort -u)
 if [ "$A" = "$B" ]; then
     ok "两处包名集合一致: $(echo "$A" | tr '\n' ' ')"
@@ -158,9 +158,9 @@ else
     say "    22 号文档: $(echo "$B" | tr '\n' ' ')"
 fi
 NA=$(echo "$A" | grep -c . || true); NB=$(echo "$B" | grep -c . || true)
-NCMD=$(grep -cE '^### 2\.[0-9] `cmd/' "$DOC_DIR/Contract/10-包依赖矩阵.md")
-if [ "$NA" = "$NB" ] && [ "$NA" = 7 ] && [ "$NCMD" = 1 ]; then
-    ok "包数量 = 8（7 个 internal + 1 个 cmd）"
+NCMD=$(grep -cE '^### 2\.[0-9.]+ `cmd/' "$DOC_DIR/Contract/10-包依赖矩阵.md")
+if [ "$NA" = "$NB" ] && [ "$NA" = 8 ] && [ "$NCMD" = 1 ]; then
+    ok "包数量 = 9（8 个 internal + 1 个 cmd）"
 else
     bad "包数量不一致（10: internal=$NA cmd=$NCMD, 22: internal=$NB）"
 fi
@@ -169,7 +169,7 @@ fi
 # 🔴 只比「包名集合」是不够的（D2/C10）。有人把 allowedImports["internal/tools"] 的值
 #    加上 "internal/transport"（正是 §262 点名的「拆护栏」行为），包名集合完全不变 ⇒ 脚本全绿。
 #    下面把两处都归一成 "包 依赖" 行，做**值级双向 diff**。
-PKGS="domain config logging deepseek resilience tools transport"
+PKGS="domain config logging deepseek resilience tools toolschema transport"
 
 # 4b-1：22 号 allowedImports（Go map 字面量，每项单行）→ "internal/x internal/y"
 MAP22=$(awk '
@@ -186,10 +186,10 @@ MAP22=$(awk '
     }' "$DOC_DIR/Engineering/22-架构守护规则.md" | sort -u)
 
 # 4b-2：10 号 §2.x 表格「允许」列 → "internal/x internal/y"
-#        cmd 段写的是「全部 `internal/*`」，展开为 7 条。
+#        cmd 段写的是「全部 `internal/*`」，展开为 8 条。
 MAP10=$(awk -v pkgs="$PKGS" '
     BEGIN { np = split(pkgs, P, " ") }
-    /^### 2\.[0-9]+ `/ {
+    /^### 2\.[0-9.]+ `/ {
         # 🔴 MUST 用 match() 取**第一对**反引号：sub(/^.*`/) 是贪婪的，
         #    对 "### 2.1 `internal/domain`" 会吃到最后一个反引号 ⇒ pkg 变空串。
         if (match($0, /`[^`]+`/)) pkg = substr($0, RSTART+1, RLENGTH-2)
@@ -230,8 +230,8 @@ EXT_PKGS=$(awk '
     f && match($0, /"(internal|cmd)\/[a-z]+"/) { print substr($0, RSTART+1, RLENGTH-2) }
 ' "$DOC_DIR/Engineering/22-架构守护规则.md" | sort -u)
 EXT_N=$(echo "$EXT_PKGS" | grep -c . || true)
-if [ "$EXT_N" = 8 ]; then
-    ok "allowedExternal 覆盖全部 8 个包（外部 import 受检）"
+if [ "$EXT_N" = 9 ]; then
+    ok "allowedExternal 覆盖全部 9 个包（外部 import 受检）"
 else
     bad "allowedExternal 只覆盖 $EXT_N 个包（应 8）: $(echo "$EXT_PKGS"|tr '\n' ' ')"
 fi
@@ -243,7 +243,7 @@ for short in $PKGS cmd; do
     #    然后 comm -3 把 10 号的全部条目误报成「不一致」—— 看起来像文档漂移，其实是脚本 bug。
     if [ "$short" = cmd ]; then pkg="cmd/deepseeksearch"; else pkg="internal/$short"; fi
     D10=$(awk -v want="$short" '
-        /^### 2\.[0-9]+ `/ { if (match($0, /`[^`]+`/)) p = substr($0, RSTART+1, RLENGTH-2); sub(/^internal\//,"",p); sub(/^cmd\/.*/,"cmd",p) }
+        /^### 2\.[0-9.]+ `/ { if (match($0, /`[^`]+`/)) p = substr($0, RSTART+1, RLENGTH-2); sub(/^internal\//,"",p); sub(/^cmd\/.*/,"cmd",p) }
         /^\|/ && p == want {
             n=split($0,C,"|"); if (n<3) next
             if (C[2] ~ /标准库/) {

@@ -43,7 +43,7 @@
 | 凭据泄漏 | API Key / HTTP token 出现在日志、错误消息、`/healthz`、Resource 响应里 |
 | SSRF 绕过 | 用 **IP 混淆写法**（八/十/十六进制、IPv4-mapped IPv6）或**重定向**绕过私网黑名单，让服务端请求内网地址 |
 | 鉴权绕过 | `auth_enabled=true` 时无 token 仍能调用工具；token 比较存在时序侧信道 |
-| 暴露面 | `host=0.0.0.0` 且未开鉴权（应在启动期就拒绝）；Origin / Host 校验缺失 |
+| 暴露面 | `host=0.0.0.0` 且未开鉴权（启动期打 `3092` warning，见 ADR-018）；Origin / Host 校验缺失 |
 | 注入 | 上游正文逃逸 `<untrusted_content>` 包裹，把 prompt injection 传给调用方 |
 | 依赖漏洞 | `go.sum` 中某个依赖的已知 CVE 影响本项目（CI 有 govulncheck job，见 `.github/workflows/ci.yml`） |
 
@@ -71,7 +71,7 @@
 | 项 | 实现 |
 |---|---|
 | 密钥隔离 | `Config/.env`（权限 600），`config.toml` 出现密钥类键名直接拒绝启动 |
-| 暴露保护 | `host` 非回环 或 `allow_non_local_host=true` 时，必须 `auth_enabled=true`，否则拒绝启动（错误码 `3092`） |
+| 暴露保护 | 暴露（`host` 非回环或 `allow_non_local_host=true`）时鉴权可选；`auth_enabled=false` 会打 `3092` warning 并继续启动（ADR-018） |
 | 请求校验 | Origin 白名单 + Host 校验 + 请求体大小上限 |
 | 日志脱敏 | API Key / token 永不进日志；配置输出前先 `Redacted()` |
 | 二进制 | `CGO_ENABLED=0` 静态编译，发布附带 `SHA256SUMS` |
