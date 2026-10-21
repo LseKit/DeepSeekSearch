@@ -131,11 +131,6 @@ func TestValidate(t *testing.T) {
 			wantErr: []string{"server.http.path"},
 		},
 		{
-			name:    "非法 CIDR",
-			mutate:  func(c *Config) { c.Security.BlockedCIDRs = []string{"not-a-cidr"} },
-			wantErr: []string{"security.blocked_cidrs"},
-		},
-		{
 			name:    "非法日志级别",
 			mutate:  func(c *Config) { c.Log.Level = "trace" },
 			wantErr: []string{"log.level"},

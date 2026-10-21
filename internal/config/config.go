@@ -206,13 +206,10 @@ type SearchConfig struct {
 	RankField      bool     `toml:"rank_field"`
 }
 
-// SecurityConfig 是上游 SSRF 防护失效时的最后一道 URL 黑名单。
+// SecurityConfig 是可追加的主机名黑名单。IP 网段基线（私网/回环/链路本地/CGNAT 等）
+// 是代码硬编码的固定纵深防御（见 tools/fetch_validate.go 的 blockedNets），不可配。
 type SecurityConfig struct {
-	BlockPrivateRanges bool     `toml:"block_private_ranges"`
-	BlockLoopback      bool     `toml:"block_loopback"`
-	BlockLinkLocal     bool     `toml:"block_link_local"`
-	BlockedHosts       []string `toml:"blocked_hosts"`
-	BlockedCIDRs       []string `toml:"blocked_cidrs"`
+	BlockedHosts []string `toml:"blocked_hosts"`
 }
 
 // LogConfig 管结构化日志的级别、轮转与脱敏。
@@ -403,15 +400,7 @@ func defaultSearch() SearchConfig {
 
 func defaultSecurity() SecurityConfig {
 	return SecurityConfig{
-		BlockPrivateRanges: true,
-		BlockLoopback:      true,
-		BlockLinkLocal:     true,
-		BlockedHosts:       []string{"metadata.google.internal", "metadata", "instance-data"},
-		BlockedCIDRs: []string{
-			"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
-			"169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10",
-			"100.64.0.0/10", "0.0.0.0/8",
-		},
+		BlockedHosts: []string{"metadata.google.internal", "metadata", "instance-data"},
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -36,7 +35,6 @@ func (c Config) Validate() (warnings []string, err error) { //nolint:gocritic //
 	errs = append(errs, c.validateCache()...)
 	errs = append(errs, c.validateDedupe()...)
 	errs = append(errs, c.validateSearch()...)
-	errs = append(errs, c.validateSecurity()...)
 	errs = append(errs, c.validateLog()...)
 	return c.collectWarnings(), errors.Join(errs...)
 }
@@ -372,17 +370,6 @@ func (c *Config) validateSearch() []error {
 	if c.Search.MinRerankRatio != nil && (*c.Search.MinRerankRatio <= 0 || *c.Search.MinRerankRatio > 1) {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
 			"search.min_rerank_ratio 必须为 null 或 0 < r ≤ 1，实际 %v", *c.Search.MinRerankRatio))
-	}
-	return errs
-}
-
-func (c *Config) validateSecurity() []error {
-	var errs []error
-	for i, cidr := range c.Security.BlockedCIDRs {
-		if _, _, err := net.ParseCIDR(cidr); err != nil {
-			errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-				"security.blocked_cidrs[%d] 无法解析为 CIDR：%q", i, cidr))
-		}
 	}
 	return errs
 }

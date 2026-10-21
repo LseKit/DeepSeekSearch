@@ -554,22 +554,13 @@ rank_field = true
 # 十进制IP / 八进制IP 全部返回同一个 404，跟"页面不存在"无法区分。
 # 而且如果 [upstream].base_url 被改成自建代理，上游那层保护就没了。
 
-# 禁止私网地址（10.x / 172.16-31.x / 192.168.x）
-block_private_ranges = true
-# 禁止本机回环（127.x / ::1）
-block_loopback = true
-# 禁止链路本地地址（169.254.x / fe80::）
-block_link_local = true
+# 🔴 IP 网段黑名单（私网/回环/链路本地/CGNAT 等 10 网段 + .internal/.local/.localhost）
+#    是程序硬编码的固定纵深防御基线，不可配：见 internal/tools/fetch_validate.go 的 blockedNets。
+#    原有的 block_private_ranges / block_loopback / block_link_local / blocked_cidrs 四键
+#    从无读取点，用户改了也静默无效（同 timeout_ms / hedge 的「假开关」），已整键移除。
 
 # 额外禁止的主机名后缀。命中即拒绝（错误码 1070）。
 blocked_hosts = ["metadata.google.internal", "metadata", "instance-data"]
-
-# 额外禁止的 IP 段。支持 CIDR 写法和单个 IP。
-blocked_cidrs = [
-  "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
-  "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10",
-  "100.64.0.0/10", "0.0.0.0/8"
-]
 
 
 # -----------------------------------------------------------------------------
