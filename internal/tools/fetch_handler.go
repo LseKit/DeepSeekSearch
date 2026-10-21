@@ -17,6 +17,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
@@ -34,6 +35,8 @@ type fetchHandler struct {
 	params   fetchParams
 	rawURL   string
 	cacheHit bool
+	reqBody  []byte
+	respBody []byte
 }
 
 // handleFetch 是 ds_fetch 的完整编排。
@@ -44,6 +47,7 @@ func handleFetch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp
 	}
 	h := &fetchHandler{deps: deps, started: deps.Clock.Now()}
 	h.logger = deps.Logger.With("call_id", newCallID(), "tool", fetchToolName)
+	ctx = h.withExchangeHook(ctx)
 
 	in, parseErr := parseFetchRequest(req)
 	if in != nil {
@@ -169,6 +173,9 @@ func (h *fetchHandler) upstream(ctx context.Context, rawURL string) (domain.Fetc
 			args = append(args, "code", domain.CodeOf(err))
 			args = domain.AppendUpstreamType(args, err)
 		}
+		if h.reqBody != nil {
+			args = append(args, "req_body", string(h.reqBody), "resp_body", string(h.respBody))
+		}
 		h.logger.Info("call.upstream.done", args...)
 		if err == nil {
 			h.recordCircuit(nil)
@@ -221,6 +228,36 @@ func (h *fetchHandler) waitRetry(ctx context.Context, delay time.Duration) bool 
 	case <-h.deps.Clock.After(delay):
 		return true
 	}
+}
+
+// withExchangeHook 在开启报文日志时把本次调用的收集器挂到 ctx（DEBT-009）。
+// 请求体里的 URL 先脱敏 —— ?token=/?sig= 不能因排查而落盘。
+func (h *fetchHandler) withExchangeHook(ctx context.Context) context.Context {
+	limitKB := h.deps.Cfg.Log.MaxBodyLogKb
+	if limitKB <= 0 {
+		return ctx
+	}
+	limitBytes := limitKB * 1024
+	return deepseek.WithExchangeHook(ctx, func(_ context.Context, req, resp []byte) {
+		h.reqBody = domain.ClipBytes(redactFetchURL(req, h.deps.Cfg.Log.RedactQueryKeys), limitBytes)
+		h.respBody = domain.ClipBytes(resp, limitBytes)
+	})
+}
+
+// redactFetchURL 仅保留 ds_fetch 请求体的 url 字段并脱敏其 query。
+func redactFetchURL(req []byte, keys []string) []byte {
+	var payload struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(req, &payload); err != nil || payload.URL == "" {
+		return req
+	}
+	payload.URL = domain.RedactURL(payload.URL, keys)
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return req
+	}
+	return out
 }
 
 func (h *fetchHandler) recordCircuit(err error) {

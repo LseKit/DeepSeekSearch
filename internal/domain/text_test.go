@@ -219,3 +219,17 @@ func extractNonce(t *testing.T, s string) string {
 	}
 	return m[1]
 }
+
+func TestClipBytes(t *testing.T) {
+	t.Parallel()
+
+	if got := ClipBytes(nil, 10); got != nil {
+		t.Fatalf("空输入 = %v, want nil", got)
+	}
+	if got := ClipBytes([]byte("abc"), 10); string(got) != "abc" {
+		t.Fatalf("未超限 = %q", got)
+	}
+	if got := ClipBytes([]byte("abcdef"), 3); string(got) != "abc...(truncated)" {
+		t.Fatalf("截断 = %q", got)
+	}
+}

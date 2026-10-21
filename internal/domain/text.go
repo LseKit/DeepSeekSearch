@@ -125,3 +125,18 @@ func halfWidth(r rune) rune {
 	}
 	return r
 }
+
+// ClipBytes 按 maxBytes 截断并在末尾追加 "(truncated)"；空输入返回 nil，
+// 便于调用方用 nil 判断「该字段不应出现」。按字节截断是安全的：日志是字节流，
+// 不面向人类排版；调用方保证只在报文日志里使用。
+func ClipBytes(body []byte, maxBytes int) []byte {
+	if len(body) == 0 || maxBytes <= 0 {
+		return nil
+	}
+	if len(body) <= maxBytes {
+		return body
+	}
+	out := make([]byte, 0, maxBytes+16)
+	out = append(out, body[:maxBytes]...)
+	return append(out, "...(truncated)"...)
+}

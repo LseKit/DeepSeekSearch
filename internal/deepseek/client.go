@@ -133,12 +133,20 @@ func (c *client) do(ctx context.Context, method, path string, body any) (raw []b
 	defer cancel()
 
 	var reader io.Reader
+	var payload []byte
 	if body != nil {
 		data, marshalErr := json.Marshal(body)
 		if marshalErr != nil {
 			return nil, 0, fmt.Errorf("deepseek: 序列化请求体失败: %w", marshalErr)
 		}
+		payload = data
 		reader = bytes.NewReader(data)
+	}
+	hook := ExchangeHookFrom(ctx)
+	fire := func(respBody []byte) {
+		if hook != nil {
+			hook(ctx, payload, respBody)
+		}
 	}
 
 	req, reqErr := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.cfg.BaseUrl, "/")+path, reader)
@@ -152,6 +160,7 @@ func (c *client) do(ctx context.Context, method, path string, body any) (raw []b
 
 	resp, doErr := c.hc.Do(req)
 	if doErr != nil {
+		fire(nil)
 		return nil, 0, fmt.Errorf("deepseek: 网络请求失败: %w", domain.NewNetworkError(classifyNetErr(ctx, doErr), attempt, doErr))
 	}
 	defer func() {
@@ -162,11 +171,14 @@ func (c *client) do(ctx context.Context, method, path string, body any) (raw []b
 
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, c.cfg.MaxResponseBytes+1))
 	if readErr != nil {
+		fire(nil)
 		return nil, resp.StatusCode, fmt.Errorf("deepseek: 读取响应体失败: %w", domain.NewNetworkError("response_reset", attempt, readErr))
 	}
 	if int64(len(raw)) > c.cfg.MaxResponseBytes {
+		fire(raw)
 		return nil, resp.StatusCode, newResponseTooLargeError(resp.StatusCode, c.cfg.MaxResponseBytes)
 	}
+	fire(raw)
 	return raw, resp.StatusCode, nil
 }
 

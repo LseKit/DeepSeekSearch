@@ -425,3 +425,27 @@ func writeBody(t *testing.T, w io.Writer, s string) {
 func strPtr(s string) *string { return &s }
 
 func intPtr(v int) *int { return &v }
+
+func TestExchangeHook(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		writeBody(t, w, `{"results":[]}`)
+	}))
+	defer srv.Close()
+
+	var gotReq, gotResp []byte
+	ctx := WithExchangeHook(context.Background(), func(_ context.Context, req, resp []byte) {
+		gotReq, gotResp = append([]byte(nil), req...), append([]byte(nil), resp...)
+	})
+	if _, err := newTestClient(srv.URL, nil).Search(ctx, domain.SearchRequest{Query: "go"}); err != nil {
+		t.Fatalf("Search() = %v", err)
+	}
+	if !strings.Contains(string(gotReq), `"query":"go"`) {
+		t.Fatalf("req 不含 query: %s", gotReq)
+	}
+	if !strings.Contains(string(gotResp), `"results"`) {
+		t.Fatalf("resp 不含 results: %s", gotResp)
+	}
+}

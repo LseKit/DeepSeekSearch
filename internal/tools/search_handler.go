@@ -18,6 +18,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
@@ -34,6 +35,8 @@ type searchHandler struct {
 	started  time.Time
 	params   searchParams
 	cacheHit bool
+	reqBody  []byte
+	respBody []byte
 }
 
 // handleSearch 是 ds_search 的完整编排。
@@ -45,6 +48,7 @@ func handleSearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mc
 	h := &searchHandler{deps: deps, started: deps.Clock.Now()}
 	h.logger = deps.Logger.With("call_id", newCallID(), "tool", searchToolName)
 	h.logger.Info("call.begin")
+	ctx = h.withExchangeHook(ctx)
 
 	in, err := parseSearchRequest(req)
 	if err != nil {
@@ -173,6 +177,9 @@ func (h *searchHandler) upstream(ctx context.Context, req *domain.SearchRequest)
 		if err != nil {
 			args = append(args, "code", domain.CodeOf(err))
 			args = domain.AppendUpstreamType(args, err)
+		}
+		if h.reqBody != nil {
+			args = append(args, "req_body", string(h.reqBody), "resp_body", string(h.respBody))
 		}
 		h.logger.Info("call.upstream.done", args...)
 		if err == nil {
@@ -339,6 +346,19 @@ func searchCacheKey(params *searchParams) string {
 func keyHash(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:6])
+}
+
+// withExchangeHook 在开启报文日志时把本次调用的收集器挂到 ctx（DEBT-009）。
+func (h *searchHandler) withExchangeHook(ctx context.Context) context.Context {
+	limitKB := h.deps.Cfg.Log.MaxBodyLogKb
+	if limitKB <= 0 {
+		return ctx
+	}
+	limitBytes := limitKB * 1024
+	return deepseek.WithExchangeHook(ctx, func(_ context.Context, req, resp []byte) {
+		h.reqBody = domain.ClipBytes(req, limitBytes)
+		h.respBody = domain.ClipBytes(resp, limitBytes)
+	})
 }
 
 func newCallID() string {

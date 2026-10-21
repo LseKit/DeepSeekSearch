@@ -21,6 +21,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
+	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 )
@@ -481,6 +482,27 @@ func TestHandleSearch(t *testing.T) {
 		}
 		if again := decodeSuccess(t, invokeSearch(t, &deps, &searchInput{Query: "no-cache"})); !again.FromCache {
 			t.Fatal("no_cache 的结果必须写回缓存")
+		}
+	})
+
+	t.Run("报文日志开关", func(t *testing.T) {
+		t.Parallel()
+		client := &fakeClient{searchFn: func(ctx context.Context, _ domain.SearchRequest) (domain.SearchResponse, error) {
+			if hook := deepseek.ExchangeHookFrom(ctx); hook != nil {
+				hook(ctx, []byte(`{"query":"q"}`), []byte(`{"results":[]}`))
+			}
+			return domain.SearchResponse{Results: []domain.SearchResult{}}, nil
+		}}
+		deps, buf := newTestDeps(t, client, func(d *Deps) { d.Cfg.Log.MaxBodyLogKb = 1 })
+		_ = invokeSearch(t, &deps, &searchInput{Query: "q"})
+		if logs := buf.String(); !strings.Contains(logs, `"req_body"`) || !strings.Contains(logs, `"resp_body"`) {
+			t.Fatalf("开启报文日志后应带 req_body/resp_body: %s", logs)
+		}
+
+		offDeps, offBuf := newTestDeps(t, &fakeClient{}, nil)
+		_ = invokeSearch(t, &offDeps, &searchInput{Query: "q"})
+		if strings.Contains(offBuf.String(), `"req_body"`) {
+			t.Fatal("关闭时 MUST NOT 出现 req_body")
 		}
 	})
 

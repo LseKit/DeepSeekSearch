@@ -228,6 +228,7 @@ type LogConfig struct {
 	Compress        bool     `toml:"compress" json:"compress"`
 	AlsoStderr      bool     `toml:"also_stderr" json:"also_stderr"`
 	SlowMs          int      `toml:"slow_ms" json:"slow_ms"`
+	MaxBodyLogKb    int      `toml:"max_body_log_kb" json:"max_body_log_kb"`
 	RedactQueryKeys []string `toml:"redact_query_keys" json:"redact_query_keys"`
 }
 

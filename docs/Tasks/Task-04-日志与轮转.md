@@ -302,7 +302,7 @@ warn.cache_key_collision
 |---|:-:|:-:|:-:|---|
 | app.start / app.config / app.db / app.transport / app.ready / app.stop | **MUST NOT** | ✅ | MUST NOT | app.stop 加 `dropped_lines`（A-01 要求 14） |
 | call.begin | ✅ | ✅ | MUST NOT | `tool` |
-| call.cache / call.limit.wait / call.upstream / call.upstream.done / call.retry / call.circuit / call.dedupe / call.section | ✅ | ✅ | MUST NOT | `tool`；call.upstream.done 加 `ms` |
+| call.cache / call.limit.wait / call.upstream / call.upstream.done / call.retry / call.circuit / call.dedupe / call.section | ✅ | ✅ | MUST NOT | `tool`；call.upstream.done 加 `ms`；开启 `log.max_body_log_kb` 时另带 `req_body`/`resp_body`（按 KB 截断、URL 已脱敏） |
 | call.end | ✅ | ✅ | **✅（唯一出现处）** | `tool`、`ms` |
 | err（调用上下文） | ✅ | ✅ | MUST NOT | `code`、`code_name` |
 | err（后台上下文：缓存/调度/清理） | **MUST NOT** | ✅ | MUST NOT | `code`、`code_name` |
@@ -328,7 +328,7 @@ warn.cache_key_collision
 |:-:|---|
 | 1 | MUST NOT 用 `log.Printf` / `fmt.Println`（`golangci-lint` 会拦） |
 | 2 | MUST NOT 在任何日志里打 `ApiKey` / `HttpToken` 原文 |
-| 3 | MUST NOT 打完整 query 正文。报文级日志开关 `log.max_body_log_kb` 已整键移除（无 `call_id` 关联路径，见 `16-技术债登记表` DEBT-009），阶段一不存在任何「可打完整正文」的配置 |
+| 3 | MUST NOT 打完整 query 正文。报文级日志由 `log.max_body_log_kb` 控制（默认 0 = 关，2026-10-21 恢复，见 DEBT-009）：开启后 `call.upstream.done` 行带 `req_body`/`resp_body`，按该值截断，`ds_fetch` 的 URL 先过 `domain.RedactURL` |
 | 4 | MUST NOT 让 logger 成为包级全局变量 —— 它 MUST 通过 `Deps.Logger` 注入 |
 | 5 | MUST NOT 在 `events.go` 里定义与本节不一致的事件名 |
 | 6 | MUST NOT 把 URL 原文写进任何日志 —— query 值 MUST 先经 `domain.RedactURL` 按 `log.redact_query_keys` 脱敏（§3 要求 11/12） |

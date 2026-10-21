@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
@@ -87,6 +88,25 @@ func TestHandleFetch(t *testing.T) {
 		}
 		if again := decodeFetchSuccess(t, invokeFetch(t, &deps, &fetchInput{URL: url})); !again.FromCache {
 			t.Fatal("no_cache 的结果必须写回缓存")
+		}
+	})
+
+	t.Run("报文日志 URL 脱敏", func(t *testing.T) {
+		t.Parallel()
+		client := &fakeClient{fetchFn: func(ctx context.Context, req domain.FetchRequest) (domain.FetchResponse, error) {
+			if hook := deepseek.ExchangeHookFrom(ctx); hook != nil {
+				hook(ctx, []byte(`{"url":"`+req.Url+`"}`), []byte(`{"title":"t","content":"c"}`))
+			}
+			return domain.FetchResponse{Title: "t", Content: strings.Repeat("a", 600)}, nil
+		}}
+		deps, buf := newTestDeps(t, client, func(d *Deps) { d.Cfg.Log.MaxBodyLogKb = 1 })
+		_ = invokeFetch(t, &deps, &fetchInput{URL: strPtr("https://example.com/a?token=SECRET&x=1")})
+		logs := buf.String()
+		if strings.Contains(logs, "SECRET") {
+			t.Fatalf("报文中的 URL 未脱敏: %s", logs)
+		}
+		if !strings.Contains(logs, `"req_body"`) {
+			t.Fatalf("开启报文日志后应带 req_body: %s", logs)
 		}
 	})
 
