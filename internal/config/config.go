@@ -46,7 +46,6 @@ type Config struct {
 	Search    SearchConfig          `json:"search"`
 	Security  SecurityConfig        `json:"security"`
 	Log       LogConfig             `json:"log"`
-	Synth     SynthConfig           `json:"synth"`
 	ApiKey    string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
 	HttpToken string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
 	sources   map[string]SourceKind `toml:"-" json:"-"`
@@ -232,14 +231,6 @@ type LogConfig struct {
 	RedactQueryKeys []string `toml:"redact_query_keys" json:"redact_query_keys"`
 }
 
-// SynthConfig 是阶段二的结果合成配置，阶段一 enabled MUST 为 false。
-type SynthConfig struct {
-	Enabled         bool   `toml:"enabled" json:"enabled"`
-	Model           string `toml:"model" json:"model"`
-	MaxInputChars   int    `toml:"max_input_chars" json:"max_input_chars"`
-	MaxOutputTokens int    `toml:"max_output_tokens" json:"max_output_tokens"`
-}
-
 // Default 返回与 13-配置契约 §三 默认值列逐格一致的内置配置。
 func Default() Config {
 	cfg := Config{
@@ -256,7 +247,6 @@ func Default() Config {
 		Search:    defaultSearch(),
 		Security:  defaultSecurity(),
 		Log:       defaultLog(),
-		Synth:     defaultSynth(),
 	}
 	cfg.sources = defaultSources(&cfg)
 	return cfg
@@ -424,10 +414,6 @@ func defaultLog() LogConfig {
 		SlowMs:          3000,
 		RedactQueryKeys: []string{"token", "key", "secret", "password", "code", "sig", "auth"},
 	}
-}
-
-func defaultSynth() SynthConfig {
-	return SynthConfig{Enabled: false, Model: "deepseek-chat", MaxInputChars: 12000, MaxOutputTokens: 800}
 }
 
 // defaultSources 预置全部已知 toml 路径为 default，

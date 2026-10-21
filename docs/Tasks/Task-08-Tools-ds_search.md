@@ -88,7 +88,7 @@
 | 16 | `max_per_domain` | integer | | 3 | 1~10 |
 | 17 | `raw_query` | boolean | | false | true 时完全绕过语法拼装 |
 | 18 | `no_cache` | boolean | | false | true 时跳过读缓存并真实调用上游，结果仍写回缓存 |
-| 19 | `synthesize` | boolean | | false | 阶段二能力。传 true 返回 `1095 VAL_SYNTH_DISABLED` |
+| 19 | `synthesize` | boolean | | false | 本版本不支持（无实现计划）。传 true 返回 `1095 VAL_SYNTH_DISABLED` |
 
 > 这张表与 `Contract/12-数据契约.md` §4.1 **必须逐字相同**。改一处 MUST 同时改另一处，`Scripts/CheckDocDrift.sh` 会比对参数名集合。
 
@@ -177,7 +177,7 @@ const searchInputSchemaJSON = `{
     },
     "synthesize": {
       "type": "boolean", "default": false,
-      "description": "本版本不支持，传 true 会返回 1095。"
+      "description": "本版本不支持且无实现计划，传 true 会返回 1095。"
     }
   }
 }`

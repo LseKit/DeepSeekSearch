@@ -39,7 +39,7 @@
 
 | # | 要求 |
 |:-:|---|
-| 1 | 21 个 struct：`Config` + `AppConfig` `ServerConfig` `ServerHttpConfig` `UpstreamConfig` `RateLimitConfig` `RateLimitBucketConfig` `RateLimitWarnConfig` `TimeoutConfig` `TimeoutToolConfig` `RetryConfig` `RetryBudgetConfig` `CircuitConfig` `LimitsConfig` `LimitsBudgetConfig` `CacheConfig` `DedupeConfig` `SearchConfig` `SecurityConfig` `LogConfig` `SynthConfig`。🔴 `HedgeConfig` **不存在**：`[hedge]` 已整段移出阶段一（DEBT-007），按 A-02 要求必须被当作未知键拒绝 |
+| 1 | 20 个 struct：`Config` + `AppConfig` `ServerConfig` `ServerHttpConfig` `UpstreamConfig` `RateLimitConfig` `RateLimitBucketConfig` `RateLimitWarnConfig` `TimeoutConfig` `TimeoutToolConfig` `RetryConfig` `RetryBudgetConfig` `CircuitConfig` `LimitsConfig` `LimitsBudgetConfig` `CacheConfig` `DedupeConfig` `SearchConfig` `SecurityConfig` `LogConfig`。🔴 `HedgeConfig` **不存在**：`[hedge]` 已整段移出阶段一（DEBT-007），按 A-02 要求必须被当作未知键拒绝 |
 | 2 | `ApiKey` 与 `HttpToken` 字段 tag 为 `toml:"-" json:"-"`（MUST NOT 出现在配置解析与任何序列化） |
 | 3 | `Default() Config` 返回**与文档 §三 默认值列逐格相同**的配置 |
 | 4 | `Redacted() Config` 把 `ApiKey`/`HttpToken` 换成 `"***"`（为空时也换，避免泄漏「是否配置」） |

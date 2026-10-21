@@ -94,10 +94,6 @@ func checkPhaseOne(cfg *Config) error {
 		errs = append(errs, configErr(domain.CodeLocNoAPIKey,
 			"DEEPSEEK_API_KEY 未配置：在 Config/.env 或环境变量中设置"))
 	}
-	if cfg.Synth.Enabled {
-		errs = append(errs, configErr(domain.CodeValSynthDisabled,
-			"synth.enabled 阶段一 MUST 为 false（阶段二能力，见 ADR-010）"))
-	}
 	if cfg.Server.Transport == "stdio" && isStdoutDest(cfg.Log.Dir) {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
 			"transport=stdio 时日志目的地不能是 stdout（log.dir=%q）：stdout 是 MCP 协议通道", cfg.Log.Dir))

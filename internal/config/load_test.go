@@ -75,12 +75,6 @@ func TestLoad(t *testing.T) {
 			wantCode:   domain.CodeLocConfigInvalid,
 		},
 		{
-			name:       "synth 开启被拒",
-			configPath: "testdata/synth.toml",
-			wantErr:    []string{"synth.enabled", "阶段二"},
-			wantCode:   domain.CodeValSynthDisabled,
-		},
-		{
 			name:       "stdio 日志 stdout 被拒",
 			configPath: "testdata/stdio_stdout.toml",
 			wantErr:    []string{"stdout", "transport=stdio"},
