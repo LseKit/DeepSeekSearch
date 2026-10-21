@@ -207,6 +207,11 @@ func classifyPayload(err error) ErrorPayload {
 	var coded Coded
 	if errors.As(err, &coded) {
 		p := payloadFor(coded.Code())
+		// 校验错误必须自报字段名：1000 的 message 是兜底文案，只说「参数不合法」，
+		// 四种不同错因会返回同一句话，排障只能靠猜（14 号 §3.0 的 details 原则）。
+		if details := validationDetails(err); len(details) > 0 {
+			p.Details = details
+		}
 		// Extra 的结构化数值 MUST 透传到 details（14 号 §3.0），
 		// 否则调用方只能从中文字符串里猜 retry_after_ms。
 		var local *LocalError
@@ -278,6 +283,23 @@ func codeForStatus(status int) int {
 }
 
 // payloadFor 按码查表生成错误体；未知码统一落 3099，避免返回空文案。
+// validationDetails 把校验错误的字段名与原因转成机器可读的 details。
+// 独立成函数是为了不让 classifyPayload 的圈复杂度继续上涨（F-S3 上限 10）。
+func validationDetails(err error) map[string]any {
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		return nil
+	}
+	details := make(map[string]any, 2)
+	if ve.field != "" {
+		details["field"] = ve.field
+	}
+	if ve.detail != "" {
+		details["detail"] = ve.detail
+	}
+	return details
+}
+
 func payloadFor(code int) ErrorPayload {
 	info, ok := CodeRegistry[code]
 	if !ok {

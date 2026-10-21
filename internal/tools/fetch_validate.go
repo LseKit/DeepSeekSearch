@@ -53,6 +53,7 @@ type fetchParams struct {
 	Sections []string
 	MaxChars int
 	Unescape bool
+	NoCache  bool
 }
 
 type cachedFetchEntry struct {
@@ -70,20 +71,21 @@ type snapshotIndex struct {
 }
 
 func validateFetch(in *fetchInput, cfg *config.Config) (fetchParams, error) {
+	if in == nil {
+		return fetchParams{MaxChars: defaultFetchMaxChars(cfg), Unescape: true}, invalid("arguments", "缺少请求参数")
+	}
 	params := fetchParams{
 		MaxChars: defaultFetchMaxChars(cfg),
 		Unescape: true,
-	}
-	if in == nil {
-		return params, invalid("arguments", "缺少请求参数")
+		NoCache:  noCacheRequested(in.NoCache),
 	}
 	rawURL := derefString(in.URL)
 	cacheID := derefString(in.CacheID)
 	if rawURL == "" && cacheID == "" {
 		return params, invalid("url/cache_id", "必须提供 url 或 cache_id 之一")
 	}
-	if rawURL != "" && cacheID != "" {
-		return params, invalid("url/cache_id", "url 与 cache_id 只能二选一")
+	if err := validateFetchExclusivity(rawURL, cacheID, params.NoCache); err != nil {
+		return params, err
 	}
 	if in.MaxChars != nil {
 		if *in.MaxChars < 0 || *in.MaxChars > fetchMaxCharsCap {

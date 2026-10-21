@@ -33,20 +33,20 @@ const (
 // 顶层 section 字段故意不带 toml tag：CheckDocDrift 会把 tag 当作配置键，
 // 给段名加 tag 会让「代码有而文档无」。子段按字段名大小写不敏感匹配。
 type Config struct {
-	App       AppConfig
-	Server    ServerConfig
-	Upstream  UpstreamConfig
-	RateLimit RateLimitConfig
-	Timeout   TimeoutConfig
-	Retry     RetryConfig
-	Circuit   CircuitConfig
-	Limits    LimitsConfig
-	Cache     CacheConfig
-	Dedupe    DedupeConfig
-	Search    SearchConfig
-	Security  SecurityConfig
-	Log       LogConfig
-	Synth     SynthConfig
+	App       AppConfig             `json:"app"`
+	Server    ServerConfig          `json:"server"`
+	Upstream  UpstreamConfig        `json:"upstream"`
+	RateLimit RateLimitConfig       `json:"ratelimit"`
+	Timeout   TimeoutConfig         `json:"timeout"`
+	Retry     RetryConfig           `json:"retry"`
+	Circuit   CircuitConfig         `json:"circuit"`
+	Limits    LimitsConfig          `json:"limits"`
+	Cache     CacheConfig           `json:"cache"`
+	Dedupe    DedupeConfig          `json:"dedupe"`
+	Search    SearchConfig          `json:"search"`
+	Security  SecurityConfig        `json:"security"`
+	Log       LogConfig             `json:"log"`
+	Synth     SynthConfig           `json:"synth"`
 	ApiKey    string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
 	HttpToken string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
 	sources   map[string]SourceKind `toml:"-" json:"-"`
@@ -54,188 +54,189 @@ type Config struct {
 
 // AppConfig 管程序自身标识，只影响日志与 MCP serverInfo 的展示。
 type AppConfig struct {
-	Name    string `toml:"name"`
-	Version string `toml:"version"`
+	Name    string `toml:"name" json:"name"`
+	Version string `toml:"version" json:"version"`
 }
 
 // ServerConfig 管「怎么和客户端说话」。
 type ServerConfig struct {
-	Transport string           `toml:"transport"`
-	Http      ServerHttpConfig //nolint:revive // 契约字段名，见 Task-03 A-01 骨架
+	Transport string           `toml:"transport" json:"transport"`
+	Http      ServerHttpConfig `json:"http"` //nolint:revive // 契约字段名，见 Task-03 A-01 骨架
 }
 
 // ServerHttpConfig 只在 Transport == "streamable-http" 时生效。
 // 默认值全部指向最安全的一端：只听回环、开 Origin 校验、开 Host 校验、不鉴权。
 type ServerHttpConfig struct { //nolint:revive // 契约类型名，见 Task-03 A-01 骨架
-	Host                        string   `toml:"host"`
-	Port                        int      `toml:"port"`
-	Path                        string   `toml:"path"`
-	JsonResponse                bool     `toml:"json_response"` //nolint:revive // 契约字段名
-	MaxRequestBodyBytes         int64    `toml:"max_request_body_bytes"`
-	DisableLocalhostProtection  bool     `toml:"disable_localhost_protection"`
-	EnableCrossOriginProtection bool     `toml:"enable_cross_origin_protection"`
-	AllowedOrigins              []string `toml:"allowed_origins"`
-	AllowNonLocalHost           bool     `toml:"allow_non_local_host"`
-	HealthzPath                 string   `toml:"healthz_path"`
-	AuthEnabled                 bool     `toml:"auth_enabled"`
-	AuthTokenEnv                string   `toml:"auth_token_env"`
+	Host                        string   `toml:"host" json:"host"`
+	Port                        int      `toml:"port" json:"port"`
+	Path                        string   `toml:"path" json:"path"`
+	JsonResponse                bool     `toml:"json_response" json:"json_response"` //nolint:revive // 契约字段名
+	MaxRequestBodyBytes         int64    `toml:"max_request_body_bytes" json:"max_request_body_bytes"`
+	MaxConcurrentRequests       int      `toml:"max_concurrent_requests" json:"max_concurrent_requests"`
+	DisableLocalhostProtection  bool     `toml:"disable_localhost_protection" json:"disable_localhost_protection"`
+	EnableCrossOriginProtection bool     `toml:"enable_cross_origin_protection" json:"enable_cross_origin_protection"`
+	AllowedOrigins              []string `toml:"allowed_origins" json:"allowed_origins"`
+	AllowNonLocalHost           bool     `toml:"allow_non_local_host" json:"allow_non_local_host"`
+	HealthzPath                 string   `toml:"healthz_path" json:"healthz_path"`
+	AuthEnabled                 bool     `toml:"auth_enabled" json:"auth_enabled"`
+	AuthTokenEnv                string   `toml:"auth_token_env" json:"auth_token_env"`
 }
 
 // UpstreamConfig 管上游 DeepSeek HTTP API 的连接参数。
 type UpstreamConfig struct {
-	BaseURL          string `toml:"base_url"`
-	SelfTestOnStart  bool   `toml:"self_test_on_start"`
-	UserAgent        string `toml:"user_agent"`
-	MaxResponseBytes int64  `toml:"max_response_bytes"`
+	BaseURL          string `toml:"base_url" json:"base_url"`
+	SelfTestOnStart  bool   `toml:"self_test_on_start" json:"self_test_on_start"`
+	UserAgent        string `toml:"user_agent" json:"user_agent"`
+	MaxResponseBytes int64  `toml:"max_response_bytes" json:"max_response_bytes"`
 }
 
 // RateLimitConfig 管令牌桶与在飞并发额度。
 type RateLimitConfig struct {
-	MaxInflight int     `toml:"max_inflight"`
-	SearchShare float64 `toml:"search_share"`
-	MaxWaitMs   int     `toml:"max_wait_ms"`
-	Search      RateLimitBucketConfig
-	Fetch       RateLimitBucketConfig
-	Warn        RateLimitWarnConfig
+	MaxInflight int                   `toml:"max_inflight" json:"max_inflight"`
+	SearchShare float64               `toml:"search_share" json:"search_share"`
+	MaxWaitMs   int                   `toml:"max_wait_ms" json:"max_wait_ms"`
+	Search      RateLimitBucketConfig `json:"search"`
+	Fetch       RateLimitBucketConfig `json:"fetch"`
+	Warn        RateLimitWarnConfig   `json:"warn"`
 }
 
 // RateLimitBucketConfig 是单个工具的令牌桶参数；search 与 fetch 各自独立。
 type RateLimitBucketConfig struct {
-	Rps   float64 `toml:"rps"`
-	Burst int     `toml:"burst"`
+	Rps   float64 `toml:"rps" json:"rps"`
+	Burst int     `toml:"burst" json:"burst"`
 }
 
 // RateLimitWarnConfig 管不阻断请求的调用量软告警。
 type RateLimitWarnConfig struct {
-	WindowS     int   `toml:"window_s"`
-	WarnAtCalls []int `toml:"warn_at_calls"`
+	WindowS     int   `toml:"window_s" json:"window_s"`
+	WarnAtCalls []int `toml:"warn_at_calls" json:"warn_at_calls"`
 }
 
 // TimeoutConfig 管分层超时：底层连接参数与两个工具各自的尝试预算。
 type TimeoutConfig struct {
-	DialMs           int `toml:"dial_ms"`
-	TLSHandshakeMs   int `toml:"tls_handshake_ms"`
-	ResponseHeaderMs int `toml:"response_header_ms"`
-	Search           TimeoutToolConfig
-	Fetch            TimeoutToolConfig
+	DialMs           int               `toml:"dial_ms" json:"dial_ms"`
+	TLSHandshakeMs   int               `toml:"tls_handshake_ms" json:"tls_handshake_ms"`
+	ResponseHeaderMs int               `toml:"response_header_ms" json:"response_header_ms"`
+	Search           TimeoutToolConfig `json:"search"`
+	Fetch            TimeoutToolConfig `json:"fetch"`
 }
 
 // TimeoutToolConfig 是单个工具的单次尝试与总时长预算。
 type TimeoutToolConfig struct {
-	PerAttemptMs   int `toml:"per_attempt_ms"`
-	MaxAttempts    int `toml:"max_attempts"`
-	TotalTimeoutMs int `toml:"total_timeout_ms"`
+	PerAttemptMs   int `toml:"per_attempt_ms" json:"per_attempt_ms"`
+	MaxAttempts    int `toml:"max_attempts" json:"max_attempts"`
+	TotalTimeoutMs int `toml:"total_timeout_ms" json:"total_timeout_ms"`
 }
 
 // RetryConfig 管重试开关、退避表与重试预算。
 type RetryConfig struct {
-	Enabled         bool     `toml:"enabled"`
-	JitterMode      string   `toml:"jitter_mode"`
-	FixedMs         []int    `toml:"fixed_ms"`
-	SpreadMs        []int    `toml:"spread_ms"`
-	ParseQPSFrom429 bool     `toml:"parse_qps_from_429"`
-	AdaptCooldownS  int      `toml:"adapt_cooldown_s"`
-	RetryOn         []string `toml:"retry_on"`
-	Budget          RetryBudgetConfig
+	Enabled         bool              `toml:"enabled" json:"enabled"`
+	JitterMode      string            `toml:"jitter_mode" json:"jitter_mode"`
+	FixedMs         []int             `toml:"fixed_ms" json:"fixed_ms"`
+	SpreadMs        []int             `toml:"spread_ms" json:"spread_ms"`
+	ParseQPSFrom429 bool              `toml:"parse_qps_from_429" json:"parse_qps_from_429"`
+	AdaptCooldownS  int               `toml:"adapt_cooldown_s" json:"adapt_cooldown_s"`
+	RetryOn         []string          `toml:"retry_on" json:"retry_on"`
+	Budget          RetryBudgetConfig `json:"budget"`
 }
 
 // RetryBudgetConfig 用于封顶重试放大比例，防止上游变慢时形成重试风暴。
 type RetryBudgetConfig struct {
-	Enabled bool    `toml:"enabled"`
-	Ratio   float64 `toml:"ratio"`
-	WindowS int     `toml:"window_s"`
+	Enabled bool    `toml:"enabled" json:"enabled"`
+	Ratio   float64 `toml:"ratio" json:"ratio"`
+	WindowS int     `toml:"window_s" json:"window_s"`
 }
 
 // CircuitConfig 管熔断器的失败阈值、打开时长与半开探测数。
 type CircuitConfig struct {
-	Enabled        bool `toml:"enabled"`
-	FailThreshold  int  `toml:"fail_threshold"`
-	OpenMs         int  `toml:"open_ms"`
-	HalfOpenProbes int  `toml:"half_open_probes"`
+	Enabled        bool `toml:"enabled" json:"enabled"`
+	FailThreshold  int  `toml:"fail_threshold" json:"fail_threshold"`
+	OpenMs         int  `toml:"open_ms" json:"open_ms"`
+	HalfOpenProbes int  `toml:"half_open_probes" json:"half_open_probes"`
 }
 
 // LimitsConfig 管返回内容的字符预算与分节粒度。
 type LimitsConfig struct {
-	MaxTotalChars      int    `toml:"max_total_chars"`
-	DefaultCount       int    `toml:"default_count"`
-	DefaultDetail      string `toml:"default_detail"`
-	SummaryChars       int    `toml:"summary_chars"`
-	MinContentChars    int    `toml:"min_content_chars"`
-	InlineMaxChars     int    `toml:"inline_max_chars"`
-	FixedChunkChars    int    `toml:"fixed_chunk_chars"`
-	OutlineMaxSections int    `toml:"outline_max_sections"`
-	Budget             LimitsBudgetConfig
+	MaxTotalChars      int                `toml:"max_total_chars" json:"max_total_chars"`
+	DefaultCount       int                `toml:"default_count" json:"default_count"`
+	DefaultDetail      string             `toml:"default_detail" json:"default_detail"`
+	SummaryChars       int                `toml:"summary_chars" json:"summary_chars"`
+	MinContentChars    int                `toml:"min_content_chars" json:"min_content_chars"`
+	InlineMaxChars     int                `toml:"inline_max_chars" json:"inline_max_chars"`
+	FixedChunkChars    int                `toml:"fixed_chunk_chars" json:"fixed_chunk_chars"`
+	OutlineMaxSections int                `toml:"outline_max_sections" json:"outline_max_sections"`
+	Budget             LimitsBudgetConfig `json:"budget"`
 }
 
 // LimitsBudgetConfig 管时间窗与自然日的调用次数硬顶，默认全关。
 type LimitsBudgetConfig struct {
-	Enabled           bool `toml:"enabled"`
-	MaxCallsPerWindow int  `toml:"max_calls_per_window"`
-	WindowS           int  `toml:"window_s"`
-	MaxCallsPerDay    int  `toml:"max_calls_per_day"`
+	Enabled           bool `toml:"enabled" json:"enabled"`
+	MaxCallsPerWindow int  `toml:"max_calls_per_window" json:"max_calls_per_window"`
+	WindowS           int  `toml:"window_s" json:"window_s"`
+	MaxCallsPerDay    int  `toml:"max_calls_per_day" json:"max_calls_per_day"`
 }
 
 // CacheConfig 是省钱的核心：上游原文的 SQLite 快照缓存。
 type CacheConfig struct {
-	Enabled        bool   `toml:"enabled"`
-	Backend        string `toml:"backend"`
-	DbPath         string `toml:"db_path"`
-	TtlFetchS      int    `toml:"ttl_fetch_s"`  //nolint:revive // 契约字段名
-	TtlSearchS     int    `toml:"ttl_search_s"` //nolint:revive // 契约字段名
-	MaxEntries     int    `toml:"max_entries"`
-	MaxBytesMb     int    `toml:"max_bytes_mb"`
-	MaxEntryKb     int    `toml:"max_entry_kb"`
-	WaitMs         int    `toml:"wait_ms"`
-	PruneIntervalS int    `toml:"prune_interval_s"`
-	DegradedOk     bool   `toml:"degraded_ok"`
+	Enabled        bool   `toml:"enabled" json:"enabled"`
+	Backend        string `toml:"backend" json:"backend"`
+	DbPath         string `toml:"db_path" json:"db_path"`
+	TtlFetchS      int    `toml:"ttl_fetch_s" json:"ttl_fetch_s"`   //nolint:revive // 契约字段名
+	TtlSearchS     int    `toml:"ttl_search_s" json:"ttl_search_s"` //nolint:revive // 契约字段名
+	MaxEntries     int    `toml:"max_entries" json:"max_entries"`
+	MaxBytesMb     int    `toml:"max_bytes_mb" json:"max_bytes_mb"`
+	MaxEntryKb     int    `toml:"max_entry_kb" json:"max_entry_kb"`
+	WaitMs         int    `toml:"wait_ms" json:"wait_ms"`
+	PruneIntervalS int    `toml:"prune_interval_s" json:"prune_interval_s"`
+	DegradedOk     bool   `toml:"degraded_ok" json:"degraded_ok"`
 }
 
 // DedupeConfig 管无损去重：URL 归一化、转载合并与单域名配额。
 type DedupeConfig struct {
-	Enabled        bool     `toml:"enabled"`
-	MaxPerDomain   int      `toml:"max_per_domain"`
-	MergeReposts   bool     `toml:"merge_reposts"`
-	TrackingParams []string `toml:"tracking_params"`
+	Enabled        bool     `toml:"enabled" json:"enabled"`
+	MaxPerDomain   int      `toml:"max_per_domain" json:"max_per_domain"`
+	MergeReposts   bool     `toml:"merge_reposts" json:"merge_reposts"`
+	TrackingParams []string `toml:"tracking_params" json:"tracking_params"`
 }
 
 // SearchConfig 管搜索结果的可选过滤与展示；阶段一默认全部关闭。
 type SearchConfig struct {
-	MinRerank      *float64 `toml:"min_rerank"`
-	MinAuthority   *int     `toml:"min_authority"`
-	MinRerankRatio *float64 `toml:"min_rerank_ratio"`
-	RankField      bool     `toml:"rank_field"`
+	MinRerank      *float64 `toml:"min_rerank" json:"min_rerank"`
+	MinAuthority   *int     `toml:"min_authority" json:"min_authority"`
+	MinRerankRatio *float64 `toml:"min_rerank_ratio" json:"min_rerank_ratio"`
+	RankField      bool     `toml:"rank_field" json:"rank_field"`
 }
 
 // SecurityConfig 是可追加的主机名黑名单。IP 网段基线（私网/回环/链路本地/CGNAT 等）
 // 是代码硬编码的固定纵深防御（见 tools/fetch_validate.go 的 blockedNets），不可配。
 type SecurityConfig struct {
-	BlockedHosts []string `toml:"blocked_hosts"`
+	BlockedHosts []string `toml:"blocked_hosts" json:"blocked_hosts"`
 }
 
 // LogConfig 管结构化日志的级别、轮转与脱敏。
 type LogConfig struct {
-	Level           string   `toml:"level"`
-	Format          string   `toml:"format"`
-	Dir             string   `toml:"dir"`
-	FilePrefix      string   `toml:"file_prefix"`
-	Timezone        string   `toml:"timezone"`
-	TsFormat        string   `toml:"ts_format"`
-	MaxSizeMb       int      `toml:"max_size_mb"`
-	DailyMaxMb      int      `toml:"daily_max_mb"`
-	MaxAgeDays      int      `toml:"max_age_days"`
-	MaxBackups      int      `toml:"max_backups"`
-	Compress        bool     `toml:"compress"`
-	AlsoStderr      bool     `toml:"also_stderr"`
-	SlowMs          int      `toml:"slow_ms"`
-	RedactQueryKeys []string `toml:"redact_query_keys"`
+	Level           string   `toml:"level" json:"level"`
+	Format          string   `toml:"format" json:"format"`
+	Dir             string   `toml:"dir" json:"dir"`
+	FilePrefix      string   `toml:"file_prefix" json:"file_prefix"`
+	Timezone        string   `toml:"timezone" json:"timezone"`
+	TsFormat        string   `toml:"ts_format" json:"ts_format"`
+	MaxSizeMb       int      `toml:"max_size_mb" json:"max_size_mb"`
+	DailyMaxMb      int      `toml:"daily_max_mb" json:"daily_max_mb"`
+	MaxAgeDays      int      `toml:"max_age_days" json:"max_age_days"`
+	MaxBackups      int      `toml:"max_backups" json:"max_backups"`
+	Compress        bool     `toml:"compress" json:"compress"`
+	AlsoStderr      bool     `toml:"also_stderr" json:"also_stderr"`
+	SlowMs          int      `toml:"slow_ms" json:"slow_ms"`
+	RedactQueryKeys []string `toml:"redact_query_keys" json:"redact_query_keys"`
 }
 
 // SynthConfig 是阶段二的结果合成配置，阶段一 enabled MUST 为 false。
 type SynthConfig struct {
-	Enabled         bool   `toml:"enabled"`
-	Model           string `toml:"model"`
-	MaxInputChars   int    `toml:"max_input_chars"`
-	MaxOutputTokens int    `toml:"max_output_tokens"`
+	Enabled         bool   `toml:"enabled" json:"enabled"`
+	Model           string `toml:"model" json:"model"`
+	MaxInputChars   int    `toml:"max_input_chars" json:"max_input_chars"`
+	MaxOutputTokens int    `toml:"max_output_tokens" json:"max_output_tokens"`
 }
 
 // Default 返回与 13-配置契约 §三 默认值列逐格一致的内置配置。
@@ -292,6 +293,7 @@ func defaultServer() ServerConfig {
 			Path:                        "/mcp",
 			JsonResponse:                true,
 			MaxRequestBodyBytes:         1048576,
+			MaxConcurrentRequests:       64,
 			DisableLocalhostProtection:  false,
 			EnableCrossOriginProtection: true,
 			AllowedOrigins:              []string{},

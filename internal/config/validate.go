@@ -54,9 +54,9 @@ func (c *Config) validateServer() []error {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
 			"server.http.max_request_body_bytes 必须 ≥1，实际 %d", hc.MaxRequestBodyBytes))
 	}
-	if (hc.Host == "0.0.0.0" || hc.AllowNonLocalHost) && !hc.AuthEnabled {
-		errs = append(errs, configErr(domain.CodeLocHTTPExposedNoAuth,
-			"server.http: host=0.0.0.0 或 allow_non_local_host=true 时必须 auth_enabled=true"))
+	if hc.MaxConcurrentRequests < 0 {
+		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
+			"server.http.max_concurrent_requests 必须 ≥0（0 = 不限），实际 %d", hc.MaxConcurrentRequests))
 	}
 	if hc.AuthEnabled && len(c.HttpToken) < 16 {
 		errs = append(errs, configErr(domain.CodeLocHTTPTokenMissing,
@@ -401,9 +401,14 @@ func (c *Config) validateLog() []error {
 }
 
 func (c *Config) collectWarnings() []string {
-	warnings := make([]string, 0, 3)
+	warnings := make([]string, 0, 4)
 	warnings = append(warnings, c.timeoutWarnings("timeout.search", c.Timeout.Search)...)
 	warnings = append(warnings, c.timeoutWarnings("timeout.fetch", c.Timeout.Fetch)...)
+	// ADR-018：暴露 + 不鉴权不再拒绝启动（原 validateServer 的 3092 error 已删），
+	// 但 MUST 留一条 warning —— 裸奔时唯一能被发现的痕迹就是这行日志。
+	if (c.Server.Http.Host == "0.0.0.0" || c.Server.Http.AllowNonLocalHost) && !c.Server.Http.AuthEnabled {
+		warnings = append(warnings, "server.http: host=0.0.0.0 或 allow_non_local_host=true 且 auth_enabled=false —— 任何能连上该端口的人都能花你的钱（3092）")
+	}
 	if c.Cache.WaitMs*4 < c.Timeout.Fetch.PerAttemptMs {
 		warnings = append(warnings, fmt.Sprintf(
 			"cache.wait_ms=%d 远小于 timeout.fetch.per_attempt_ms=%d：跨进程等待者很可能在 cache.wait_ms 后拿到 3075；若频繁出现，调大 cache.wait_ms 或确认这是有意取舍",

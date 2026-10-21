@@ -75,8 +75,28 @@ func (m *middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // middlewareNames 是 §六之二 固定链的请求经过顺序；mcp 是链末端。
 var middlewareNames = []string{
-	"recover", "accessLog", "securityHeaders", "healthz",
+	"recover", "accessLog", "securityHeaders", "healthz", "admission",
 	"crossOrigin", "hostGuard", "authGuard", "bodyLimit", "mcp",
+}
+
+// admission 是入口并发闸门（ADR-019）：槽位耗尽立即 429，不排队。
+// 位于 healthz 之后 —— 探活永远可用；位于鉴权之前 —— 超载时不必先做鉴权。
+func admission(cfg *config.Config, log *slog.Logger, next http.Handler) http.Handler {
+	limit := cfg.Server.Http.MaxConcurrentRequests
+	if limit <= 0 {
+		return &middleware{name: "admission", next: next}
+	}
+	slots := make(chan struct{}, limit)
+	return &middleware{name: "admission", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+			next.ServeHTTP(w, r)
+		default:
+			w.Header().Set("Retry-After", "1")
+			writeError(w, log, http.StatusTooManyRequests, domain.CodeLocHTTPOverloaded, "入口并发已满")
+		}
+	})}
 }
 
 // chain 按 Contract 15 §六之二的字面顺序装配。顺序写死在这一处，
@@ -89,6 +109,7 @@ func chain(cfg *config.Config, build domain.BuildInfo, log *slog.Logger, started
 	h = authGuard(cfg, log, h)
 	h = hostGuard(cfg, log, h)
 	h = policy.handler(h)
+	h = admission(cfg, log, h)
 	h = healthzHandler(cfg, build, startedAt, cache, log, h)
 	h = securityHeaders(h)
 	h = accessLog(log, cfg, h)

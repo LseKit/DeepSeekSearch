@@ -74,21 +74,31 @@ func handleSearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mc
 
 	key := searchCacheKey(&params)
 	ttl := h.cacheTTL()
-	if ttl > 0 {
-		raw, hit, getErr := deps.Cache.Get(totalCtx, key)
-		if getErr != nil {
-			h.logCacheDegraded("get", key, getErr)
-		}
-		if getErr == nil && hit {
-			env, ok := decodeSearchEnvelope(raw)
-			if ok {
-				return h.renderAndFinish(env, true)
-			}
-			h.logCacheDegraded("decode", key, fmt.Errorf("缓存内容不是合法的搜索结果信封"))
-			return h.runUpstream(totalCtx, ctx, key, ttl, false)
-		}
+	if res, done := h.replayCache(totalCtx, ctx, key, ttl); done {
+		return res
 	}
-	return h.runUpstream(totalCtx, ctx, key, ttl, true)
+	return h.runUpstream(totalCtx, ctx, key, ttl, !h.params.NoCache)
+}
+
+// replayCache 命中则直接渲染。no_cache 要求真实调用上游：既不读缓存，
+// 也不能搭别人的 singleflight，否则「必定计费」在并发下不成立（DEBT-003）。
+func (h *searchHandler) replayCache(totalCtx, parentCtx context.Context, key string, ttl time.Duration) (*mcp.CallToolResult, bool) {
+	if ttl <= 0 || h.params.NoCache {
+		return nil, false
+	}
+	raw, hit, getErr := h.deps.Cache.Get(totalCtx, key)
+	if getErr != nil {
+		h.logCacheDegraded("get", key, getErr)
+	}
+	if getErr != nil || !hit {
+		return nil, false
+	}
+	env, ok := decodeSearchEnvelope(raw)
+	if !ok {
+		h.logCacheDegraded("decode", key, fmt.Errorf("缓存内容不是合法的搜索结果信封"))
+		return h.runUpstream(totalCtx, parentCtx, key, ttl, false), true
+	}
+	return h.renderAndFinish(env, true), true
 }
 
 func (h *searchHandler) runUpstream(totalCtx, parentCtx context.Context, key string, ttl time.Duration, useSingleflight bool) *mcp.CallToolResult {

@@ -36,6 +36,7 @@ type searchParams struct {
 	MinAuthority   *int
 	MaxPerDomain   int
 	RawQuery       bool
+	NoCache        bool
 	Synthesize     bool
 	EffectiveQuery string
 	Warnings       []string
@@ -54,12 +55,28 @@ type namedString struct {
 	value string
 }
 
+// noCacheRequested 解析可选布尔开关；抽出来是为了不让调用方的圈复杂度计数变高。
+func noCacheRequested(v *bool) bool { return v != nil && *v }
+
+// validateFetchExclusivity 校验 fetch 的互斥参数组合。
+// 抽成子函数的原因同 noCacheRequested：validateFetch 的复杂度已在基线边上。
+func validateFetchExclusivity(rawURL, cacheID string, noCache bool) error {
+	if rawURL != "" && cacheID != "" {
+		return invalid("url/cache_id", "url 与 cache_id 只能二选一")
+	}
+	if noCache && cacheID != "" {
+		return invalid("no_cache", "no_cache 不能与 cache_id 同传")
+	}
+	return nil
+}
+
 func validateSearch(in *searchInput, cfg *config.Config) (searchParams, error) {
 	params := searchParams{
 		Query:        in.Query,
 		Count:        defaultCount(cfg),
 		Detail:       defaultDetail(cfg),
 		MaxPerDomain: 3,
+		NoCache:      noCacheRequested(in.NoCache),
 	}
 	if err := validateNoNewlines(in); err != nil {
 		return params, err

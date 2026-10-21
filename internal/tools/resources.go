@@ -52,7 +52,7 @@ func resourceDefinitions() []resourceDef {
 			URI:         resourceErrorCodes,
 			Name:        "错误码表",
 			Title:       "错误码全表",
-			Description: "需要解释错误码含义或判断是否可重试时读取：41 个码的 code/name/message/hint/retryable。",
+			Description: "需要解释错误码含义或判断是否可重试时读取：42 个码的 code/name/message/hint/retryable。",
 			MIMEType:    "application/json",
 			read:        func(context.Context, *Deps) ([]byte, error) { return errorCodesDocument() },
 		},
@@ -190,6 +190,8 @@ func configSourceKeys() []string {
 
 func effectiveConfigJSON(_ context.Context, deps *Deps) ([]byte, error) {
 	redacted := deps.Cfg.Redacted()
+	// Config 的每个字段都带 json tag，键名与 config.toml 完全一致 ——
+	// 这样本资源的 config 段与 source 的点路径能互相对照。
 	configRaw, err := json.Marshal(redacted)
 	if err != nil {
 		return nil, fmt.Errorf("marshal redacted config: %w", err)
@@ -315,7 +317,7 @@ type usageSnapshot struct {
 	Hourly []hourUsage          `json:"hourly"`
 }
 
-// Snapshot 返回当前统计快照；hourly 只保留最近 24 桶并按时间升序。
+// snapshot 返回当前统计快照；hourly 只保留最近 24 桶并按时间升序。
 func (u *UsageTracker) snapshot() usageSnapshot {
 	u.mu.Lock()
 	u.pruneLocked(u.clk.Now())

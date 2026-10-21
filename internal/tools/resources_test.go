@@ -63,7 +63,7 @@ func TestResources(t *testing.T) {
 		if err := json.Unmarshal(raw, &entries); err != nil {
 			t.Fatalf("error-codes 不是合法 JSON: %v", err)
 		}
-		if len(entries) != len(domain.CodeRegistry) || len(entries) != 41 {
+		if len(entries) != len(domain.CodeRegistry) || len(entries) != 42 {
 			t.Fatalf("条目数 = %d, registry=%d", len(entries), len(domain.CodeRegistry))
 		}
 	})
@@ -101,6 +101,14 @@ func TestResources(t *testing.T) {
 		}
 		if !strings.Contains(text, `"api_key":"***"`) {
 			t.Fatalf("api_key 未显示为 ***: %s", text)
+		}
+		// config 段 MUST 用 config.toml 的键路径，与 source 的点路径同构；
+		// 曾经直接 marshal Go 结构体，得到 Transport/Http 这类字段名，用户对不上配置文件。
+		if !strings.Contains(text, `"server":{"`) || !strings.Contains(text, `"host":`) {
+			t.Fatalf("config 未使用 toml 键路径: %s", text)
+		}
+		if strings.Contains(text, `"Http":`) || strings.Contains(text, `"Transport":`) {
+			t.Fatalf("config 仍含 Go 字段名: %s", text)
 		}
 	})
 

@@ -84,6 +84,20 @@ func TestSSRF(t *testing.T) {
 	}
 }
 
+func TestValidateFetchNoCacheConflict(t *testing.T) {
+	t.Parallel()
+
+	// cache_id 本身就是读缓存，与 no_cache 同传语义自相矛盾，MUST 当场拒绝。
+	_, err := validateFetch(&fetchInput{CacheID: strPtr("snap_x"), NoCache: boolPtr(true)}, fetchConfig())
+	if err == nil {
+		t.Fatal("no_cache + cache_id 应被拒绝")
+	}
+	p := domain.ToPayload(err, "ds_fetch")
+	if p.Code != domain.CodeValInvalidParam || p.Details["field"] != "no_cache" {
+		t.Fatalf("payload = %+v, want 1000 + details.field=no_cache", p)
+	}
+}
+
 func TestFetchValidate(t *testing.T) {
 	t.Parallel()
 
@@ -217,10 +231,10 @@ func TestFetchSchema(t *testing.T) {
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		t.Fatalf("schema JSON = %v", err)
 	}
-	if len(schema.Properties) != 6 {
-		t.Fatalf("参数数量 = %d, want 6", len(schema.Properties))
+	if len(schema.Properties) != 7 {
+		t.Fatalf("参数数量 = %d, want 7", len(schema.Properties))
 	}
-	for _, forbidden := range []string{"no_cache", "offset"} {
+	for _, forbidden := range []string{"offset"} {
 		if _, ok := schema.Properties[forbidden]; ok {
 			t.Fatalf("schema MUST NOT 含 %s", forbidden)
 		}

@@ -15,7 +15,7 @@ type CodeInfo struct {
 	Retryable bool   // 重试器唯一依据
 }
 
-// 1xxx 是我方入参校验错误，从 1000 起、步长 10。
+// 1xxx 是我方入参校验错误，从 1000 起、主段步长 10（1095 是 synthesize 软错误哨兵，为例外）。
 const (
 	CodeValInvalidParam    = 1000
 	CodeValQueryTooLong    = 1010
@@ -49,7 +49,7 @@ const (
 	CodeUpParse          = 2999
 )
 
-// 3xxx 是本地资源/状态错误，从 3000 起、步长 10；3099 是兜底哨兵。
+// 3xxx 是本地资源/状态错误，从 3000 起、主段步长 10；3041/3075/3091~3093 是紧邻细分码，3099 是兜底哨兵。
 const (
 	CodeLocQueueTimeout        = 3000
 	CodeLocRetryBudget         = 3010
@@ -66,6 +66,7 @@ const (
 	CodeLocHTTPUnauthorized    = 3091
 	CodeLocHTTPExposedNoAuth   = 3092
 	CodeLocHTTPHostRejected    = 3093
+	CodeLocHTTPOverloaded      = 3094
 	CodeLocInternal            = 3099
 )
 
@@ -304,9 +305,15 @@ var CodeRegistry = map[int]CodeInfo{
 	},
 	3092: {
 		Name:      "LOC_HTTP_EXPOSED_NO_AUTH",
-		Message:   "服务对外暴露但未启用鉴权，已拒绝启动",
-		Hint:      "设置 auth_enabled=true 并提供 token，或只监听回环地址。",
+		Message:   "服务对外暴露但未启用鉴权（启动警告，不阻断）",
+		Hint:      "任何能连上该端口的人都能调用并计费；需要鉴权时设 auth_enabled=true 并提供 token，或只监听回环地址。见 ADR-018。",
 		Retryable: false,
+	},
+	3094: {
+		Name:      "LOC_HTTP_OVERLOADED",
+		Message:   "HTTP 入口并发已满，请求被拒绝",
+		Hint:      "这是入口并发闸门（server.http.max_concurrent_requests）；稍后重试，或调大该值（0=不限）。",
+		Retryable: true,
 	},
 	3093: {
 		Name:      "LOC_HTTP_HOST_REJECTED",

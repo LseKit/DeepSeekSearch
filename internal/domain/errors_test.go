@@ -42,7 +42,7 @@ func TestToPayload(t *testing.T) {
 	}{
 		{"nil 归 3099", nil, CodeLocInternal, false, 0, false},
 		{"LocalError 走 Coded 分支", NewLocalError(CodeLocQueueTimeout, "排队超时", map[string]any{"queue_depth": 12}), CodeLocQueueTimeout, true, 0, true},
-		{"ValidationError 走 Coded 分支", NewValidationError(CodeValCountRange, "count", "超范围"), CodeValCountRange, false, 0, false},
+		{"ValidationError 走 Coded 分支", NewValidationError(CodeValCountRange, "count", "超范围"), CodeValCountRange, false, 0, true},
 		{"外部 Coded 错误走第一步", fakeCodedError{code: CodeLocCircuitOpen}, CodeLocCircuitOpen, true, 0, false},
 		{"UpstreamError 429", NewUpstreamError(429, "rid-1", "rate limited", nil), CodeUpRateLimited, true, 429, false},
 		{"UpstreamError status 0 归 2998", &UpstreamError{HttpStatus: 0}, CodeUpNetwork, true, 0, false},
@@ -87,6 +87,20 @@ func TestToPayload(t *testing.T) {
 				t.Errorf("有 Details = %v, want %v", got, tt.wantDetail)
 			}
 		})
+	}
+}
+
+func TestToPayloadValidationDetails(t *testing.T) {
+	t.Parallel()
+
+	// 1000 的 message 是兜底文案，四种不同错因会返回同一句话；
+	// 只有 details.field 能让调用方知道该改哪个参数（14 号 §3.0）。
+	p := ToPayload(NewValidationError(CodeValInvalidParam, "exact_phrase", "不能包含双引号"), "ds_search")
+	if p.Details["field"] != "exact_phrase" {
+		t.Errorf("Details.field = %v, want exact_phrase", p.Details["field"])
+	}
+	if p.Details["detail"] != "不能包含双引号" {
+		t.Errorf("Details.detail = %v", p.Details["detail"])
 	}
 }
 

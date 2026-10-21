@@ -34,7 +34,7 @@ type fetchOutput struct {
 	Content          string               `json:"content,omitempty"`
 	Sections         []fetchSectionOutput `json:"sections,omitempty"`
 	OutlineKind      string               `json:"outline_kind,omitempty"`
-	Warnings         []string             `json:"warnings,omitempty"`
+	Warnings         []string             `json:"warnings"`
 	Truncated        bool                 `json:"truncated"`
 	TruncatedBy      string               `json:"truncated_by,omitempty"`
 	FromCache        bool                 `json:"from_cache"`
@@ -73,7 +73,8 @@ func (h *fetchHandler) render(entry *cachedFetchEntry, fromCache bool) (*mcp.Cal
 	}
 	setFetchCacheMeta(&out, entry.CapturedAt, fromCache, h.deps.Clock.Now())
 
-	var warnings []string
+	// 12 号 §4.1：warnings 必带 —— 空数组也要出现，避免客户端写两套分支。
+	warnings := make([]string, 0, 2)
 	switch mode {
 	case inlineMode:
 		body, truncated := budgetCut(content, h.params.MaxChars)

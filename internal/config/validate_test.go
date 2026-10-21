@@ -37,15 +37,6 @@ func TestValidate(t *testing.T) {
 			wantErr: []string{"server.http.port"},
 		},
 		{
-			name: "外网监听未鉴权",
-			mutate: func(c *Config) {
-				c.Server.Http.Host = "0.0.0.0"
-				c.Server.Http.AuthEnabled = false
-			},
-			wantErr:  []string{"server.http", "auth_enabled"},
-			wantCode: domain.CodeLocHTTPExposedNoAuth,
-		},
-		{
 			name: "鉴权 token 为空",
 			mutate: func(c *Config) {
 				c.Server.Http.Host = "0.0.0.0"
@@ -258,6 +249,19 @@ func TestValidateWarnings(t *testing.T) {
 	}
 	if !strings.Contains(joined, "cache.wait_ms") {
 		t.Fatalf("默认配置应提示 cache.wait_ms 远小于 fetch 时长，实际 warnings=%v", warnings)
+	}
+
+	// ADR-018：暴露 + 不鉴权由「拒启」改为「warning」——必须既不返回 error，
+	// 又留下 3092 留痕，否则裸奔在日志里完全不可见。
+	exposed := baseValidConfig()
+	exposed.Server.Http.Host = "0.0.0.0"
+	exposed.Server.Http.AuthEnabled = false
+	warnings, err = exposed.Validate()
+	if err != nil {
+		t.Fatalf("ADR-018 之后暴露且不鉴权不应拒绝启动，实际 error=%v", err)
+	}
+	if !strings.Contains(strings.Join(warnings, "\n"), "3092") {
+		t.Fatalf("暴露且不鉴权应产生 3092 warning，实际 warnings=%v", warnings)
 	}
 
 	slowClient := baseValidConfig()

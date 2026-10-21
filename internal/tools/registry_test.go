@@ -91,8 +91,8 @@ func TestSearchSchema(t *testing.T) {
 	if parsed.Type != "object" || parsed.AdditionalProperties {
 		t.Fatalf("schema type/additionalProperties = %q/%v", parsed.Type, parsed.AdditionalProperties)
 	}
-	if len(parsed.Properties) != 18 {
-		t.Fatalf("属性数 = %d, want 18", len(parsed.Properties))
+	if len(parsed.Properties) != 19 {
+		t.Fatalf("属性数 = %d, want 19", len(parsed.Properties))
 	}
 	if !slices.Equal(parsed.Required, []string{"query"}) {
 		t.Fatalf("required = %v, want [query]", parsed.Required)

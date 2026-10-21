@@ -1,5 +1,5 @@
 // 文件名: codes_test.go
-// 用途: 校验 41 个错误码的数量、命名、分段与可重试标志。
+// 用途: 校验 42 个错误码的数量、命名、分段与可重试标志。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -16,7 +16,7 @@ import (
 func TestCodeRegistry(t *testing.T) {
 	t.Parallel()
 
-	if got, want := len(CodeRegistry), 41; got != want {
+	if got, want := len(CodeRegistry), 42; got != want {
 		t.Fatalf("CodeRegistry 长度 = %d, want %d（不许增删而不改文档）", got, want)
 	}
 
@@ -103,7 +103,7 @@ func TestCodeRegistrySegments(t *testing.T) {
 	}{
 		{"1xxx", 11},
 		{"2xxx", 14},
-		{"3xxx", 16},
+		{"3xxx", 17},
 	}
 	for _, tt := range tests {
 		t.Run(tt.seg, func(t *testing.T) {
@@ -162,10 +162,11 @@ func TestCodeConstants(t *testing.T) {
 		{CodeLocHTTPUnauthorized, "LOC_HTTP_UNAUTHORIZED"},
 		{CodeLocHTTPExposedNoAuth, "LOC_HTTP_EXPOSED_NO_AUTH"},
 		{CodeLocHTTPHostRejected, "LOC_HTTP_HOST_REJECTED"},
+		{CodeLocHTTPOverloaded, "LOC_HTTP_OVERLOADED"},
 		{CodeLocInternal, "LOC_INTERNAL"},
 	}
 
-	if got, want := len(tests), 41; got != want {
+	if got, want := len(tests), 42; got != want {
 		t.Fatalf("常量清单 = %d 条, want %d", got, want)
 	}
 

@@ -93,18 +93,9 @@ func handleFetch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp
 		normalized = params.URL
 	}
 	entryKey := fetchEntryKey(normalized)
-	useSingleflight := true
-	if h.cacheTTL() > 0 {
-		entry, hit, collision, cacheErr := h.loadURLCache(totalCtx, entryKey, normalized)
-		switch {
-		case cacheErr != nil:
-			h.logCacheDegraded("get", entryKey, cacheErr)
-			useSingleflight = false
-		case collision:
-			useSingleflight = false
-		case hit:
-			return h.renderAndFinish(&entry, true)
-		}
+	entry, hit, useSingleflight := h.replayCache(totalCtx, entryKey, normalized)
+	if hit {
+		return h.renderAndFinish(&entry, true)
 	}
 
 	entry, shared, fetchErr := h.fetchEntry(totalCtx, entryKey, normalized, useSingleflight)
@@ -236,6 +227,29 @@ func (h *fetchHandler) recordCircuit(err error) {
 	if h.deps.Circuit != nil {
 		h.deps.Circuit.Record("fetch", err)
 	}
+}
+
+// replayCache 返回可直接渲染的缓存项；第三个返回值表示能否参与 singleflight。
+// no_cache / 读错误 / 键碰撞都必须绕过缓存且不参与 singleflight —— 否则
+// 「no_cache 必定计费」在并发下不成立（DEBT-003）。
+func (h *fetchHandler) replayCache(ctx context.Context, entryKey, normalized string) (cachedFetchEntry, bool, bool) {
+	if h.params.NoCache {
+		return cachedFetchEntry{}, false, false
+	}
+	if h.cacheTTL() <= 0 {
+		return cachedFetchEntry{}, false, true
+	}
+	cached, hit, collision, err := h.loadURLCache(ctx, entryKey, normalized)
+	switch {
+	case err != nil:
+		h.logCacheDegraded("get", entryKey, err)
+		return cachedFetchEntry{}, false, false
+	case collision:
+		return cachedFetchEntry{}, false, false
+	case hit:
+		return cached, true, false
+	}
+	return cachedFetchEntry{}, false, true
 }
 
 func (h *fetchHandler) loadURLCache(ctx context.Context, entryKey, normalized string) (cached cachedFetchEntry, hit, collision bool, err error) {

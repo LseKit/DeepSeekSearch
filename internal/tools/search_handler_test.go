@@ -460,6 +460,44 @@ func TestHandleSearch(t *testing.T) {
 		}
 	})
 
+	t.Run("no_cache 跳过读缓存但仍写回", func(t *testing.T) {
+		t.Parallel()
+		client := &fakeClient{searchFn: func(context.Context, domain.SearchRequest) (domain.SearchResponse, error) {
+			return domain.SearchResponse{Results: []domain.SearchResult{{
+				RerankScore: 1.5, Title: "t", Url: "https://x.com/a", Authority: 2,
+			}}}, nil
+		}}
+		deps, _ := newTestDeps(t, client, nil)
+		_ = decodeSuccess(t, invokeSearch(t, &deps, &searchInput{Query: "no-cache"}))
+		if hit := decodeSuccess(t, invokeSearch(t, &deps, &searchInput{Query: "no-cache"})); !hit.FromCache {
+			t.Fatal("同参第二次应命中缓存")
+		}
+		forced := decodeSuccess(t, invokeSearch(t, &deps, &searchInput{Query: "no-cache", NoCache: boolPtr(true)}))
+		if forced.FromCache {
+			t.Fatal("no_cache=true 不得读缓存")
+		}
+		if got := client.callCount(); got != 2 {
+			t.Fatalf("上游调用次数 = %d, want 2（首次 + no_cache）", got)
+		}
+		if again := decodeSuccess(t, invokeSearch(t, &deps, &searchInput{Query: "no-cache"})); !again.FromCache {
+			t.Fatal("no_cache 的结果必须写回缓存")
+		}
+	})
+
+	t.Run("warnings 必带（空数组也要出现）", func(t *testing.T) {
+		t.Parallel()
+		client := &fakeClient{searchFn: func(context.Context, domain.SearchRequest) (domain.SearchResponse, error) {
+			return domain.SearchResponse{Results: []domain.SearchResult{{
+				RerankScore: 1.5, Title: "t", Url: "https://x.com/a", Authority: 2,
+			}}}, nil
+		}}
+		deps, _ := newTestDeps(t, client, nil)
+		res := invokeSearch(t, &deps, &searchInput{Query: "q"})
+		if got := resultText(t, res); !strings.Contains(got, `"warnings":[]`) {
+			t.Fatalf("warnings 为空时 MUST 序列化为 []（12 号 §4.1），实际: %s", got)
+		}
+	})
+
 	t.Run("正文逃逸被中和", func(t *testing.T) {
 		t.Parallel()
 		client := &fakeClient{searchFn: func(context.Context, domain.SearchRequest) (domain.SearchResponse, error) {

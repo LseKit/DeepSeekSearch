@@ -69,6 +69,36 @@ func TestHandleFetch(t *testing.T) {
 		}
 	})
 
+	t.Run("no_cache 跳过读缓存但仍写回", func(t *testing.T) {
+		t.Parallel()
+		client := fetchFixture("T", strings.Repeat("a", 600))
+		deps, _ := newTestDeps(t, client, nil)
+		url := strPtr("https://example.com/nc")
+		_ = decodeFetchSuccess(t, invokeFetch(t, &deps, &fetchInput{URL: url}))
+		if cached := decodeFetchSuccess(t, invokeFetch(t, &deps, &fetchInput{URL: url})); !cached.FromCache {
+			t.Fatal("第二次应命中缓存")
+		}
+		forced := decodeFetchSuccess(t, invokeFetch(t, &deps, &fetchInput{URL: url, NoCache: boolPtr(true)}))
+		if forced.FromCache {
+			t.Fatal("no_cache=true 不得读缓存")
+		}
+		if got := client.fetchCount(); got != 2 {
+			t.Fatalf("fetch 上游调用 = %d, want 2（首次 + no_cache）", got)
+		}
+		if again := decodeFetchSuccess(t, invokeFetch(t, &deps, &fetchInput{URL: url})); !again.FromCache {
+			t.Fatal("no_cache 的结果必须写回缓存")
+		}
+	})
+
+	t.Run("warnings 必带（空数组也要出现）", func(t *testing.T) {
+		t.Parallel()
+		deps, _ := newTestDeps(t, fetchFixture("T", strings.Repeat("a", 600)), nil)
+		res := invokeFetch(t, &deps, &fetchInput{URL: strPtr("https://example.com/w")})
+		if raw := resultText(t, res); !strings.Contains(raw, `"warnings":[]`) {
+			t.Fatalf("warnings 为空时 MUST 序列化为 []（12 号 §4.1），实际: %s", raw)
+		}
+	})
+
 	t.Run("20000字符按标题分节", func(t *testing.T) {
 		t.Parallel()
 		content := "# A\n" + strings.Repeat("a", 10000) + "\n## B\n" + strings.Repeat("b", 10000)

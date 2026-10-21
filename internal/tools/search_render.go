@@ -26,7 +26,7 @@ type searchOutput struct {
 	QueryEffective   string             `json:"query_effective"`
 	Total            int                `json:"total"`
 	Results          []searchOutputItem `json:"results"`
-	Warnings         []string           `json:"warnings,omitempty"`
+	Warnings         []string           `json:"warnings"`
 	FromCache        bool               `json:"from_cache"`
 	CachedAt         string             `json:"cached_at"`
 	AgeSeconds       int                `json:"age_seconds"`
@@ -59,7 +59,7 @@ func (h *searchHandler) render(env cachedSearchEnvelope, fromCache bool) (res *m
 	now := h.deps.Clock.Now()
 	total = len(env.Response.Results)
 	items := env.Response.Results
-	warnings := append([]string(nil), h.params.Warnings...)
+	warnings := append([]string{}, h.params.Warnings...)
 
 	if h.deps.Cfg.Dedupe.Enabled {
 		var stats domain.DedupeStats

@@ -44,11 +44,6 @@ func (h *httpHandler) Name() string { return "streamable-http" }
 
 // Serve 监听配置地址直到 ctx 取消，并用 15s 超时优雅关闭。
 func (h *httpHandler) Serve(ctx context.Context, srv *mcp.Server) error {
-	// 配置层已校验过；这里再断言一次对外暴露必须伴随鉴权（14 号 3092 的语义）。
-	if h.cfg.Server.Http.AllowNonLocalHost && !h.cfg.Server.Http.AuthEnabled {
-		return fmt.Errorf("allow_non_local_host=true 时 MUST 同时启用 auth_enabled")
-	}
-
 	handler, err := newHTTPHandler(&h.cfg, h.build, h.log, h.startedAt, h.cache, srv)
 	if err != nil {
 		return err

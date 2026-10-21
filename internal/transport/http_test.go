@@ -653,6 +653,63 @@ func TestDisableLocalhostProtection(t *testing.T) {
 	}
 }
 
+// TestAdmission 验证入口并发闸门（ADR-019）：槽位占满时立即 429 + 3094，不排队。
+func TestAdmission(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.Server.Http.MaxConcurrentRequests = 1
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		entered <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	})
+	ts := httptest.NewServer(admission(&cfg, discardLogger(), next))
+	defer ts.Close()
+
+	go func() {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL, http.NoBody)
+		if err != nil {
+			return
+		}
+		resp, err := ts.Client().Do(req)
+		if err == nil {
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				return
+			}
+		}
+	}()
+	<-entered // 第一个请求已占住唯一槽位
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL, http.NoBody)
+	if err != nil {
+		t.Fatalf("构造第二个请求失败: %v", err)
+	}
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("第二个请求失败: %v", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		t.Fatalf("关闭响应体失败: %v", closeErr)
+	}
+	close(release)
+	if readErr != nil {
+		t.Fatalf("读取响应体失败: %v", readErr)
+	}
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429, body=%s", resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After = %q, want 1", got)
+	}
+	if !strings.Contains(string(body), "3094") {
+		t.Fatalf("body 不含 3094: %s", body)
+	}
+}
+
 func TestMiddlewareOrder(t *testing.T) {
 	cfg := testConfig()
 	policy, err := newOriginPolicy(&cfg)

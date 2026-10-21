@@ -71,6 +71,10 @@
       "type": "boolean", "default": false,
       "description": "true 时完全绕过语法拼装，query 原样发给上游（自行负责 site:/after: 等操作符语法）。"
     },
+    "no_cache": {
+      "type": "boolean", "default": false,
+      "description": "true 时跳过读缓存、真实调用上游（必定计费），但结果仍写入缓存供他人命中。"
+    },
     "synthesize": {
       "type": "boolean", "default": false,
       "description": "本版本不支持，传 true 会返回 1095。"
