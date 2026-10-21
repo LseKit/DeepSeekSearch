@@ -26,15 +26,8 @@ import (
 )
 
 const (
-	researchToolName  = "ds_research"
-	extractToolName   = "ds_extract"
-	bundleMaxRunes    = 32000
-	researchParallel  = 3
-	defaultSources    = 3
-	defaultSourceChar = 6000
-	defaultExtractChr = 4000
-	defaultExtractPar = 4
-	maxExtractURLs    = 10
+	researchToolName = "ds_research"
+	extractToolName  = "ds_extract"
 )
 
 type researchTool struct{}
@@ -93,7 +86,6 @@ type researchSource struct {
 	URL         string  `json:"url"`
 	Date        *string `json:"date"`
 	RerankScore float64 `json:"rerank_score"`
-	Chars       int     `json:"chars"`
 	Ok          bool    `json:"ok"`
 	Error       string  `json:"error,omitempty"`
 	Content     string  `json:"-"`
@@ -130,7 +122,7 @@ func handleResearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *
 	sources, warnings := runResearchFetch(ctx, deps, items, *in.PerSourceChars)
 	bundle, truncated := buildBundle(sources)
 	if truncated {
-		warnings = append(warnings, fmt.Sprintf("bundle 因 %d rune 预算截断，其余来源见 sources[]", bundleMaxRunes))
+		warnings = append(warnings, fmt.Sprintf("bundle 因 %d rune 预算截断，其余来源见 sources[]", 32000))
 	}
 	raw, marshalErr := json.Marshal(researchOutput{Question: in.Question, Sources: sources, Bundle: bundle, Warnings: warnings})
 	if marshalErr != nil {
@@ -163,7 +155,7 @@ func runResearchSearch(ctx context.Context, deps *Deps, in researchInput) ([]sea
 
 func runResearchFetch(ctx context.Context, deps *Deps, items []searchOutputItem, maxChars int) (sources []researchSource, warnings []string) {
 	sources = make([]researchSource, len(items))
-	sem := make(chan struct{}, researchParallel)
+	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
 	for i := range items {
 		wg.Add(1)
@@ -177,7 +169,7 @@ func runResearchFetch(ctx context.Context, deps *Deps, items []searchOutputItem,
 			if payload != nil {
 				src.Error = payload.Message
 			} else {
-				src.Ok, src.Content, src.Chars = true, out.Content, out.TotalChars
+				src.Ok, src.Content = true, contentOrOutline(&out)
 			}
 			sources[i] = src
 		}(i)
@@ -201,8 +193,8 @@ func buildBundle(sources []researchSource) (string, bool) {
 		}
 	}
 	out := b.String()
-	if utf8.RuneCountInString(out) > bundleMaxRunes {
-		sliced, _ := domain.SliceByRune(out, 0, bundleMaxRunes)
+	if utf8.RuneCountInString(out) > 32000 {
+		sliced, _ := domain.SliceByRune(out, 0, 32000)
 		return sliced, true
 	}
 	return out, false
@@ -214,13 +206,13 @@ func validateResearch(in *researchInput) error {
 		return invalid("question", "必须 1~128 rune")
 	}
 	if in.MaxSources == nil {
-		n := defaultSources
+		n := 3
 		in.MaxSources = &n
 	} else if *in.MaxSources < 1 || *in.MaxSources > 5 {
 		return invalid("max_sources", "必须在 1~5 之间")
 	}
 	if in.PerSourceChars == nil {
-		n := defaultSourceChar
+		n := 6000
 		in.PerSourceChars = &n
 	} else if *in.PerSourceChars < 1000 || *in.PerSourceChars > 20000 {
 		return invalid("per_source_chars", "必须在 1000~20000 之间")
@@ -240,7 +232,6 @@ type extractItem struct {
 	Ok      bool                 `json:"ok"`
 	Title   string               `json:"title,omitempty"`
 	Content string               `json:"content,omitempty"`
-	Chars   int                  `json:"chars"`
 	Error   *domain.ErrorPayload `json:"error,omitempty"`
 }
 
@@ -294,7 +285,7 @@ func runExtract(ctx context.Context, deps *Deps, in extractInput) []extractItem 
 			if payload != nil {
 				item.Error = payload
 			} else {
-				item.Ok, item.Title, item.Content, item.Chars = true, out.Title, out.Content, out.TotalChars
+				item.Ok, item.Title, item.Content = true, out.Title, contentOrOutline(&out)
 			}
 			items[i] = item
 		}(i, url)
@@ -304,22 +295,35 @@ func runExtract(ctx context.Context, deps *Deps, in extractInput) []extractItem 
 }
 
 func validateExtract(in *extractInput) error {
-	if err := mcputil.ValidateURLList(in.URLs, maxExtractURLs); err != nil {
+	if err := mcputil.ValidateURLList(in.URLs, 10); err != nil {
 		return fmt.Errorf("urls: %w", err)
 	}
 	if in.MaxCharsEach == nil {
-		n := defaultExtractChr
+		n := 4000
 		in.MaxCharsEach = &n
 	} else if *in.MaxCharsEach < 1000 || *in.MaxCharsEach > 20000 {
 		return invalid("max_chars_each", "必须在 1000~20000 之间")
 	}
 	if in.Concurrency == nil {
-		n := defaultExtractPar
+		n := 4
 		in.Concurrency = &n
 	} else if *in.Concurrency < 1 || *in.Concurrency > 8 {
 		return invalid("concurrency", "必须在 1~8 之间")
 	}
 	return nil
+}
+
+// contentOrOutline 取正文；大文档 fetch 返回 outline（content 为空）时降级为目录文本。
+func contentOrOutline(out *fetchOutput) string {
+	if out.Content != "" {
+		return out.Content
+	}
+	var b strings.Builder
+	b.WriteString("（大文档：以下为目录）\n")
+	for _, sec := range out.Sections {
+		fmt.Fprintf(&b, "- [%s] %s（%d 字）\n", sec.ID, sec.Title, sec.Chars)
+	}
+	return b.String()
 }
 
 // runFetchSub 走 ds_fetch 的完整管线（缓存/限流/重试/反转义），返回解析输出或错误体。

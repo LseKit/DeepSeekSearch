@@ -148,7 +148,7 @@ func TestExtract(t *testing.T) {
 		if len(out.Items) != 2 || !out.Items[0].Ok || !out.Items[1].Ok {
 			t.Fatalf("items = %+v", out.Items)
 		}
-		if out.Items[0].Chars == 0 || out.Items[0].Content == "" {
+		if out.Items[0].Content == "" {
 			t.Fatalf("item[0] = %+v", out.Items[0])
 		}
 	})
