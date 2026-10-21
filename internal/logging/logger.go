@@ -56,7 +56,8 @@ func New(cfg Config) (*slog.Logger, io.Closer, error) { //nolint:gocritic // 签
 		handler = slog.NewTextHandler(out, opts)
 	}
 
-	// config_sha256 是进程级属性，一次性全局注入，保证 24/24 事件必带。
+	// config_sha256 是进程级属性，一次性全局注入，保证每个事件必带。
+	// 不写死「N/N」：事件数的真源是 Task-04 A-02，写死会随事件增减漂移。
 	return slog.New(handler).With("config_sha256", cfg.ConfigSha), w, nil
 }
 

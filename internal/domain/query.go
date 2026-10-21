@@ -151,7 +151,8 @@ func appendWord(b *strings.Builder, word string) {
 }
 
 // hasOperator 判断操作符是否独立出现：必须在串首或空白之后。
-// 这样 -site: 不会被当成 site:，引号里的「site:」也不会误判。
+// 这样 -site: 里的 site: 不会被当成独立的 site:（前一字符是 - 而非空白）。
+// 这是启发式，不解析引号：引号内但紧跟空白的 site: 仍会命中。
 func hasOperator(lowerQuery, op string) bool {
 	for start := 0; start < len(lowerQuery); {
 		idx := strings.Index(lowerQuery[start:], op)
