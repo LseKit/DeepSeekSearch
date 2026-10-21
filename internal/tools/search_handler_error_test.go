@@ -90,7 +90,9 @@ func TestHandleSearchErrors(t *testing.T) {
 		if _, ok := payload.Details["elapsed_ms"]; !ok {
 			t.Fatalf("details 缺少 elapsed_ms: %v", payload.Details)
 		}
-		if client.callCount() != 1 {
+		// 10ms 是真实时间：满负载 -race 下总超时可能先于首次上游调用到期，
+		// 此时 calls=0 是正确退化，护栏只需保证超时后不再发起重试。
+		if client.callCount() > 1 {
 			t.Fatalf("整链超时后不应再发起尝试，calls = %d", client.callCount())
 		}
 	})
