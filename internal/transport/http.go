@@ -100,7 +100,13 @@ func newHTTPHandler(cfg *config.Config, build domain.BuildInfo, log *slog.Logger
 	}
 	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return srv },
-		&mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: cfg.Server.Http.JsonResponse},
+		&mcp.StreamableHTTPOptions{
+			Stateless:    true,
+			JSONResponse: cfg.Server.Http.JsonResponse,
+			// SDK 默认在「本连接来自回环地址且 Host 非回环」时 403，反代到回环监听必然命中；
+			// 该键在 13 号 §三 已登记为危险开关，不接给 SDK 就是假开关。
+			DisableLocalhostProtection: cfg.Server.Http.DisableLocalhostProtection,
+		},
 	)
 	return chain(cfg, build, log, startedAt, cache, policy, mcpHandler), nil
 }

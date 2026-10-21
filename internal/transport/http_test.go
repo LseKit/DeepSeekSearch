@@ -596,6 +596,63 @@ func TestHostGuard(t *testing.T) {
 	})
 }
 
+// TestDisableLocalhostProtection 验证该键真的接到了 SDK 的 DNS 重绑定防护。
+// httptest 监听回环，请求带非回环 Host：本项目 hostGuard 已由 allow_non_local_host
+// 放行，所以 403 只可能来自 SDK 那一层。
+func TestDisableLocalhostProtection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		disable bool
+		want    int
+	}{
+		{name: "默认开启防护时非回环 Host 被 SDK 拒绝", disable: false, want: http.StatusForbidden},
+		{name: "配置为 true 后非回环 Host 放行", disable: true, want: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := testConfig()
+			cfg.Server.Http.AllowNonLocalHost = true
+			cfg.Server.Http.AuthEnabled = true
+			cfg.Server.Http.DisableLocalhostProtection = tt.disable
+			cfg.HttpToken = "test-token-0123456789"
+			ts := newTestServer(t, cfg)
+
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+				ts.URL+"/mcp", strings.NewReader(modernCallBody(25, "tools/list", "")))
+			if err != nil {
+				t.Fatalf("构造请求失败: %v", err)
+			}
+			req.Host = "evil.example.com"
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json, text/event-stream")
+			for k, v := range modernHeaders("tools/list", "") {
+				req.Header.Set(k, v)
+			}
+			req.Header.Set("Authorization", "Bearer "+cfg.HttpToken)
+
+			resp, err := ts.Client().Do(req)
+			if err != nil {
+				t.Fatalf("请求失败: %v", err)
+			}
+			raw, readErr := io.ReadAll(resp.Body)
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				t.Fatalf("关闭响应体失败: %v", closeErr)
+			}
+			if readErr != nil {
+				t.Fatalf("读取响应体失败: %v", readErr)
+			}
+			if resp.StatusCode != tt.want {
+				t.Fatalf("status = %d, want %d, body=%s", resp.StatusCode, tt.want, raw)
+			}
+		})
+	}
+}
+
 func TestMiddlewareOrder(t *testing.T) {
 	cfg := testConfig()
 	policy, err := newOriginPolicy(&cfg)
