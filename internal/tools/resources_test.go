@@ -117,8 +117,8 @@ func TestResources(t *testing.T) {
 		t.Parallel()
 		deps := resourceDeps(t)
 		snapshot := decodeUsage(t, readResource(t, &deps, resourceUsage))
-		if len(snapshot.Tools) != 3 {
-			t.Fatalf("tools = %d, want 3", len(snapshot.Tools))
+		if len(snapshot.Tools) != 5 {
+			t.Fatalf("tools = %d, want 5", len(snapshot.Tools))
 		}
 		for name, stat := range snapshot.Tools {
 			if stat.Calls != 0 || stat.Billed != 0 || stat.CacheHits != 0 || stat.Errors != 0 {
@@ -240,7 +240,7 @@ func TestNewUsageTracker(t *testing.T) {
 
 	tracker := NewUsageTracker(nil)
 	snapshot := tracker.snapshot()
-	if len(snapshot.Tools) != 3 {
+	if len(snapshot.Tools) != 5 {
 		t.Fatalf("tools = %d", len(snapshot.Tools))
 	}
 	tracker.Record("unknown", true, false, nil)

@@ -71,7 +71,7 @@ func (t *healthTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic //
 // Registry 返回全部待注册工具。
 // 字面量顺序本身就是 Name 字典序，保证 tools/list 两次请求完全一致。
 func Registry() []Tool {
-	return []Tool{&fetchTool{}, &healthTool{}, &searchTool{}}
+	return []Tool{&extractTool{}, &fetchTool{}, &healthTool{}, &researchTool{}, &searchTool{}}
 }
 
 // RegisterAll 遍历注册全部工具与 MCP Resource。

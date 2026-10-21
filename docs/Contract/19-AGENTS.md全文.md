@@ -38,6 +38,8 @@
 | `ds_search` | 网页搜索。返回已按 `rerank_score` 降序的结果 |
 | `ds_fetch` | 网页正文抓取。大文档按标题分节，避免上下文爆炸 |
 | `ds_health` | 本地诊断。检查 Key / 上游连通 / 缓存 / 生效配置 |
+| `ds_research` | 组合研究：1 次搜索 + 并发抓取前 N 条来源，返回带编号引用的材料 |
+| `ds_extract` | 批量抓取：1~10 个 URL 并发抓取，单条失败只影响该条 |
 
 对外提供两种传输：`stdio` 与**无状态 `Streamable HTTP`**（MCP 2026-07-28）。
 
@@ -142,6 +144,7 @@ GitHubSrc/
 ├── internal/tools/         MCP 工具：校验 + 编排 + 渲染
 ├── internal/transport/     stdio + Streamable HTTP + 中间件链
 ├── internal/toolschema/    工具 JSON Schema 字面量（纯数据叶子包，零依赖）
+├── internal/mcputil/       MCP 入参/结果薄封装（叶子包）
 ├── internal/arch_test.go   架构守护测试
 ├── Scripts/                CheckSize / CheckDocDrift / SyncDocs / Release
 └── docs/                   从 ../Doc 单向同步，MUST NOT 手写

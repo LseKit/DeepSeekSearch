@@ -41,9 +41,10 @@ var allowedImports = map[string][]string{
 	"internal/deepseek":   {"internal/domain", "internal/config"},
 	"internal/resilience": {"internal/domain", "internal/config"},
 	"internal/health":     {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience"},
-	"internal/tools":      {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health"},
+	"internal/mcputil":    {"internal/domain"},
+	"internal/tools":      {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health", "internal/mcputil"},
 	"internal/transport":  {"internal/domain", "internal/config", "internal/logging"},
-	"cmd/deepseeksearch":  {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/tools", "internal/toolschema", "internal/health", "internal/transport"},
+	"cmd/deepseeksearch":  {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/tools", "internal/toolschema", "internal/health", "internal/mcputil", "internal/transport"},
 }
 
 // allowedExternal 是包级的**标准库 + 第三方**白名单（与 Contract 10 §2.1~2.8、22 号 §2.1 同源）。
@@ -82,6 +83,9 @@ var allowedExternal = map[string][]string{
 		"github.com/modelcontextprotocol/go-sdk/mcp",
 	},
 	"internal/toolschema": {}, // 纯数据包，无 import
+	"internal/mcputil": {
+		"encoding/json", "fmt", "strings", "github.com/modelcontextprotocol/go-sdk/mcp",
+	},
 	"internal/health": {
 		"context", "crypto/sha256", "encoding/hex", "encoding/json", "fmt", "log/slog", "time",
 		"github.com/modelcontextprotocol/go-sdk/mcp",
@@ -488,7 +492,7 @@ func TestToolNames(t *testing.T) {
 	for _, tool := range tools.Registry() {
 		got = append(got, tool.Name())
 	}
-	want := []string{"ds_fetch", "ds_health", "ds_search"}
+	want := []string{"ds_extract", "ds_fetch", "ds_health", "ds_research", "ds_search"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("工具名 = %v, want %v", got, want)
 	}
@@ -526,8 +530,8 @@ func TestToolAnnotations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools 失败: %v", err)
 	}
-	if len(res.Tools) != 3 {
-		t.Fatalf("tools/list 返回 %d 个工具, want 3", len(res.Tools))
+	if len(res.Tools) != 5 {
+		t.Fatalf("tools/list 返回 %d 个工具, want 5", len(res.Tools))
 	}
 	for _, tool := range res.Tools {
 		if tool.Annotations == nil {

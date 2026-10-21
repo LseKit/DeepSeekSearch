@@ -246,8 +246,8 @@ func NewUsageTracker(clk resilience.Clock) *UsageTracker {
 	if clk == nil {
 		clk = resilience.SystemClock()
 	}
-	stats := make(map[string]*toolStat, 3)
-	for _, tool := range []string{"ds_search", "ds_fetch", "ds_health"} {
+	stats := make(map[string]*toolStat, 5)
+	for _, tool := range []string{"ds_search", "ds_fetch", "ds_health", "ds_research", "ds_extract"} {
 		stats[tool] = &toolStat{}
 	}
 	return &UsageTracker{clk: clk, stats: stats, hourly: make(map[int64]*hourCounters)}
@@ -356,7 +356,7 @@ func (u *UsageTracker) snapshot() usageSnapshot {
 
 func emptyUsageSnapshot() usageSnapshot {
 	tools := make(map[string]toolUsage, 3)
-	for _, tool := range []string{"ds_search", "ds_fetch", "ds_health"} {
+	for _, tool := range []string{"ds_search", "ds_fetch", "ds_health", "ds_research", "ds_extract"} {
 		tools[tool] = toolUsage{}
 	}
 	return usageSnapshot{Tools: tools, Hourly: []hourUsage{}}

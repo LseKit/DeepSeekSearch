@@ -19,7 +19,7 @@ import (
 func TestRegistry(t *testing.T) {
 	t.Parallel()
 
-	want := []string{"ds_fetch", "ds_health", "ds_search"}
+	want := []string{"ds_extract", "ds_fetch", "ds_health", "ds_research", "ds_search"}
 	for round := range 3 {
 		got := make([]string, 0, 3)
 		for _, tool := range Registry() {
