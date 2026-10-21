@@ -257,7 +257,7 @@ FMT_OK
 | 文件 | 内容 |
 |---|---|
 | `internal/logging/logger.go` | `New` + `ConfigSha256` + `toSlogLevel` + `Slow`（stderr 配额采样 `samplingWriter` 已在 A-01 的 `writer.go`，避免重复定义） |
-| `internal/logging/events.go` | 🔴 28 个事件名常量（唯一真源） |
+| `internal/domain/events.go` | 🔴 28 个事件名常量（代码落地；语义真源仍是本文件 §3.1） |
 | ~~`internal/logging/redact.go`~~ | 🔴 **已移到 `internal/domain/redact.go`**（`Task-02` A-02 §3 第 12 条）：调用点在 `deepseek`/`tools`，而这两个包**不允许** import `logging`（10 号 §2.4/§2.6） |
 | `internal/logging/logger_test.go` | 测试（见 §6） |
 
@@ -269,7 +269,7 @@ FMT_OK
 | 2 | 输出目标：文件（`RotatingWriter`）+ 可选 stderr（`io.MultiWriter`） |
 | 3 | 🔴 **MUST NOT 输出到 stdout**，代码里 `os.Stdout` 出现次数 = 0 |
 | 4 | `ConfigSha256(cfg config.Config) string`：对 `Redacted()` 后的 JSON 求 sha256，取前 12 位。🔴 且 `New()` MUST 用 slog 的 `With("config_sha256", …)` **一次性全局注入**每条日志行（§3.1.1 裁决 1：全体事件必带，不依赖各调用点自觉）。指纹值由装配层（Task-12）调 `ConfigSha256(fullCfg)` 算好后，经 `logging.Config` 的 `ConfigSha` 字段传入 `New` |
-| 5 | 事件常量表（`events.go`）定义下方 🔴 **28 个**事件名，MUST 用常量不用字面量 |
+| 5 | 事件常量表（`internal/domain/events.go`）定义下方 🔴 **28 个**事件名，MUST 用常量不用字面量 |
 | 6 | `Slow` 判定：`ms > log.slow_ms` → 额外打 `warn.slow` |
 | 7 | 🔴 **E16 更正**：日志**行内**时间格式用 `log.ts_format` 与 `log.timezone`（原文误写 `log.timestamp_layout` —— 该键在 `Contract/13-配置契约.md` §二 的职责是「**文件名**里的时间戳格式」，而文件名格式已由 A-01 §3.1 裁决为固定不可配，`internal/logging/` 里 `timestamp_layout` 键名 MUST 零命中）。slog 默认 Handler 不支持自定义时间版式，MUST 经 `HandlerOptions.ReplaceAttr` 把 `slog.TimeKey` 格式化为 `cfg.TsFormat`（先 `In(cfg.TZ)`）。🔴 时间值 MUST 取注入的 `cfg.Clock.Now()`，MUST NOT 用 slog 内部的真实时钟 —— 否则行内时间无法在测试里确定性断言（H8） |
 | 8 | 日志级别从 `log.level` 映射到 `slog.Level`（`debug/info/warn/error`） |
@@ -330,7 +330,7 @@ warn.cache_key_collision
 | 2 | MUST NOT 在任何日志里打 `ApiKey` / `HttpToken` 原文 |
 | 3 | MUST NOT 打完整 query 正文。报文级日志由 `log.max_body_log_kb` 控制（默认 0 = 关，2026-10-21 恢复，见 DEBT-009）：开启后 `call.upstream.done` 行带 `req_body`/`resp_body`，按该值截断，`ds_fetch` 的 URL 先过 `domain.RedactURL` |
 | 4 | MUST NOT 让 logger 成为包级全局变量 —— 它 MUST 通过 `Deps.Logger` 注入 |
-| 5 | MUST NOT 在 `events.go` 里定义与本节不一致的事件名 |
+| 5 | MUST NOT 在 `internal/domain/events.go` 里定义与本节不一致的事件名 |
 | 6 | MUST NOT 把 URL 原文写进任何日志 —— query 值 MUST 先经 `domain.RedactURL` 按 `log.redact_query_keys` 脱敏（§3 要求 11/12） |
 | 7 | MUST NOT 给 app.* / cache.prune / log.rotate / warn.cache_degraded / warn.log_quota 等后台事件带 `call_id`，也 MUST NOT 给 call.end 以外的事件带 `billed`（§3.1.1 表） |
 
@@ -388,11 +388,11 @@ func New(cfg Config) (*slog.Logger, io.Closer, error) {
 
 ```go
 // 文件名: events.go
-// 用途: 定义全部日志事件名常量，是全项目事件名的唯一真源。
+// 用途: 定义全部日志事件名常量（语义真源仍是 Task-04 A-02 §3.1）。
 // 创建日期: 2026-10-20
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
-package logging
+package domain
 
 const (
 	EvAppStart     = "app.start"
@@ -437,7 +437,7 @@ $ grep -rn 'os.Stdout' internal/logging/*.go | grep -v '_test.go' ; echo "生产
 $ grep -rn 'timestamp_layout' internal/logging/ ; echo "命中数=$(grep -rn 'timestamp_layout' internal/logging/ | wc -l)"
 命中数=0
 
-$ grep -c 'Ev[A-Z]' internal/logging/events.go
+$ grep -c 'Ev[A-Z]' internal/domain/events.go
 28
 ```
 

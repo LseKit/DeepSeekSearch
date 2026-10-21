@@ -33,39 +33,39 @@ const (
 // 顶层 section 字段故意不带 toml tag：CheckDocDrift 会把 tag 当作配置键，
 // 给段名加 tag 会让「代码有而文档无」。子段按字段名大小写不敏感匹配。
 type Config struct {
-	App       AppConfig             `json:"app"`
-	Server    ServerConfig          `json:"server"`
-	Upstream  UpstreamConfig        `json:"upstream"`
-	RateLimit RateLimitConfig       `json:"ratelimit"`
-	Timeout   TimeoutConfig         `json:"timeout"`
-	Retry     RetryConfig           `json:"retry"`
-	Circuit   CircuitConfig         `json:"circuit"`
-	Limits    LimitsConfig          `json:"limits"`
-	Cache     CacheConfig           `json:"cache"`
-	Dedupe    DedupeConfig          `json:"dedupe"`
-	Search    SearchConfig          `json:"search"`
-	Security  SecurityConfig        `json:"security"`
-	Log       LogConfig             `json:"log"`
+	App       appConfig             `json:"app"`
+	Server    serverConfig          `json:"server"`
+	Upstream  upstreamConfig        `json:"upstream"`
+	RateLimit rateLimitConfig       `json:"ratelimit"`
+	Timeout   timeoutConfig         `json:"timeout"`
+	Retry     retryConfig           `json:"retry"`
+	Circuit   circuitConfig         `json:"circuit"`
+	Limits    limitsConfig          `json:"limits"`
+	Cache     cacheConfig           `json:"cache"`
+	Dedupe    dedupeConfig          `json:"dedupe"`
+	Search    searchConfig          `json:"search"`
+	Security  securityConfig        `json:"security"`
+	Log       logConfig             `json:"log"`
 	ApiKey    string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
 	HttpToken string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
 	sources   map[string]SourceKind `toml:"-" json:"-"`
 }
 
-// AppConfig 管程序自身标识，只影响日志与 MCP serverInfo 的展示。
-type AppConfig struct {
+// appConfig 管程序自身标识，只影响日志与 MCP serverInfo 的展示。
+type appConfig struct {
 	Name    string `toml:"name" json:"name"`
 	Version string `toml:"version" json:"version"`
 }
 
-// ServerConfig 管「怎么和客户端说话」。
-type ServerConfig struct {
+// serverConfig 管「怎么和客户端说话」。
+type serverConfig struct {
 	Transport string           `toml:"transport" json:"transport"`
-	Http      ServerHttpConfig `json:"http"` //nolint:revive // 契约字段名，见 Task-03 A-01 骨架
+	Http      serverHttpConfig `json:"http"` //nolint:revive // 契约字段名，见 Task-03 A-01 骨架
 }
 
-// ServerHttpConfig 只在 Transport == "streamable-http" 时生效。
+// serverHttpConfig 只在 Transport == "streamable-http" 时生效。
 // 默认值全部指向最安全的一端：只听回环、开 Origin 校验、开 Host 校验、不鉴权。
-type ServerHttpConfig struct { //nolint:revive // 契约类型名，见 Task-03 A-01 骨架
+type serverHttpConfig struct { //nolint:revive // 契约类型名，见 Task-03 A-01 骨架
 	Host                        string   `toml:"host" json:"host"`
 	Port                        int      `toml:"port" json:"port"`
 	Path                        string   `toml:"path" json:"path"`
@@ -81,54 +81,54 @@ type ServerHttpConfig struct { //nolint:revive // 契约类型名，见 Task-03 
 	AuthTokenEnv                string   `toml:"auth_token_env" json:"auth_token_env"`
 }
 
-// UpstreamConfig 管上游 DeepSeek HTTP API 的连接参数。
-type UpstreamConfig struct {
+// upstreamConfig 管上游 DeepSeek HTTP API 的连接参数。
+type upstreamConfig struct {
 	BaseURL          string `toml:"base_url" json:"base_url"`
 	SelfTestOnStart  bool   `toml:"self_test_on_start" json:"self_test_on_start"`
 	UserAgent        string `toml:"user_agent" json:"user_agent"`
 	MaxResponseBytes int64  `toml:"max_response_bytes" json:"max_response_bytes"`
 }
 
-// RateLimitConfig 管令牌桶与在飞并发额度。
-type RateLimitConfig struct {
+// rateLimitConfig 管令牌桶与在飞并发额度。
+type rateLimitConfig struct {
 	MaxInflight int                   `toml:"max_inflight" json:"max_inflight"`
 	SearchShare float64               `toml:"search_share" json:"search_share"`
 	MaxWaitMs   int                   `toml:"max_wait_ms" json:"max_wait_ms"`
-	Search      RateLimitBucketConfig `json:"search"`
-	Fetch       RateLimitBucketConfig `json:"fetch"`
-	Warn        RateLimitWarnConfig   `json:"warn"`
+	Search      rateLimitBucketConfig `json:"search"`
+	Fetch       rateLimitBucketConfig `json:"fetch"`
+	Warn        rateLimitWarnConfig   `json:"warn"`
 }
 
-// RateLimitBucketConfig 是单个工具的令牌桶参数；search 与 fetch 各自独立。
-type RateLimitBucketConfig struct {
+// rateLimitBucketConfig 是单个工具的令牌桶参数；search 与 fetch 各自独立。
+type rateLimitBucketConfig struct {
 	Rps   float64 `toml:"rps" json:"rps"`
 	Burst int     `toml:"burst" json:"burst"`
 }
 
-// RateLimitWarnConfig 管不阻断请求的调用量软告警。
-type RateLimitWarnConfig struct {
+// rateLimitWarnConfig 管不阻断请求的调用量软告警。
+type rateLimitWarnConfig struct {
 	WindowS     int   `toml:"window_s" json:"window_s"`
 	WarnAtCalls []int `toml:"warn_at_calls" json:"warn_at_calls"`
 }
 
-// TimeoutConfig 管分层超时：底层连接参数与两个工具各自的尝试预算。
-type TimeoutConfig struct {
+// timeoutConfig 管分层超时：底层连接参数与两个工具各自的尝试预算。
+type timeoutConfig struct {
 	DialMs           int               `toml:"dial_ms" json:"dial_ms"`
 	TLSHandshakeMs   int               `toml:"tls_handshake_ms" json:"tls_handshake_ms"`
 	ResponseHeaderMs int               `toml:"response_header_ms" json:"response_header_ms"`
-	Search           TimeoutToolConfig `json:"search"`
-	Fetch            TimeoutToolConfig `json:"fetch"`
+	Search           timeoutToolConfig `json:"search"`
+	Fetch            timeoutToolConfig `json:"fetch"`
 }
 
-// TimeoutToolConfig 是单个工具的单次尝试与总时长预算。
-type TimeoutToolConfig struct {
+// timeoutToolConfig 是单个工具的单次尝试与总时长预算。
+type timeoutToolConfig struct {
 	PerAttemptMs   int `toml:"per_attempt_ms" json:"per_attempt_ms"`
 	MaxAttempts    int `toml:"max_attempts" json:"max_attempts"`
 	TotalTimeoutMs int `toml:"total_timeout_ms" json:"total_timeout_ms"`
 }
 
-// RetryConfig 管重试开关、退避表与重试预算。
-type RetryConfig struct {
+// retryConfig 管重试开关、退避表与重试预算。
+type retryConfig struct {
 	Enabled         bool              `toml:"enabled" json:"enabled"`
 	JitterMode      string            `toml:"jitter_mode" json:"jitter_mode"`
 	FixedMs         []int             `toml:"fixed_ms" json:"fixed_ms"`
@@ -136,26 +136,26 @@ type RetryConfig struct {
 	ParseQPSFrom429 bool              `toml:"parse_qps_from_429" json:"parse_qps_from_429"`
 	AdaptCooldownS  int               `toml:"adapt_cooldown_s" json:"adapt_cooldown_s"`
 	RetryOn         []string          `toml:"retry_on" json:"retry_on"`
-	Budget          RetryBudgetConfig `json:"budget"`
+	Budget          retryBudgetConfig `json:"budget"`
 }
 
-// RetryBudgetConfig 用于封顶重试放大比例，防止上游变慢时形成重试风暴。
-type RetryBudgetConfig struct {
+// retryBudgetConfig 用于封顶重试放大比例，防止上游变慢时形成重试风暴。
+type retryBudgetConfig struct {
 	Enabled bool    `toml:"enabled" json:"enabled"`
 	Ratio   float64 `toml:"ratio" json:"ratio"`
 	WindowS int     `toml:"window_s" json:"window_s"`
 }
 
-// CircuitConfig 管熔断器的失败阈值、打开时长与半开探测数。
-type CircuitConfig struct {
+// circuitConfig 管熔断器的失败阈值、打开时长与半开探测数。
+type circuitConfig struct {
 	Enabled        bool `toml:"enabled" json:"enabled"`
 	FailThreshold  int  `toml:"fail_threshold" json:"fail_threshold"`
 	OpenMs         int  `toml:"open_ms" json:"open_ms"`
 	HalfOpenProbes int  `toml:"half_open_probes" json:"half_open_probes"`
 }
 
-// LimitsConfig 管返回内容的字符预算与分节粒度。
-type LimitsConfig struct {
+// limitsConfig 管返回内容的字符预算与分节粒度。
+type limitsConfig struct {
 	MaxTotalChars      int                `toml:"max_total_chars" json:"max_total_chars"`
 	DefaultCount       int                `toml:"default_count" json:"default_count"`
 	DefaultDetail      string             `toml:"default_detail" json:"default_detail"`
@@ -164,19 +164,19 @@ type LimitsConfig struct {
 	InlineMaxChars     int                `toml:"inline_max_chars" json:"inline_max_chars"`
 	FixedChunkChars    int                `toml:"fixed_chunk_chars" json:"fixed_chunk_chars"`
 	OutlineMaxSections int                `toml:"outline_max_sections" json:"outline_max_sections"`
-	Budget             LimitsBudgetConfig `json:"budget"`
+	Budget             limitsBudgetConfig `json:"budget"`
 }
 
-// LimitsBudgetConfig 管时间窗与自然日的调用次数硬顶，默认全关。
-type LimitsBudgetConfig struct {
+// limitsBudgetConfig 管时间窗与自然日的调用次数硬顶，默认全关。
+type limitsBudgetConfig struct {
 	Enabled           bool `toml:"enabled" json:"enabled"`
 	MaxCallsPerWindow int  `toml:"max_calls_per_window" json:"max_calls_per_window"`
 	WindowS           int  `toml:"window_s" json:"window_s"`
 	MaxCallsPerDay    int  `toml:"max_calls_per_day" json:"max_calls_per_day"`
 }
 
-// CacheConfig 是省钱的核心：上游原文的 SQLite 快照缓存。
-type CacheConfig struct {
+// cacheConfig 是省钱的核心：上游原文的 SQLite 快照缓存。
+type cacheConfig struct {
 	Enabled        bool   `toml:"enabled" json:"enabled"`
 	Backend        string `toml:"backend" json:"backend"`
 	DbPath         string `toml:"db_path" json:"db_path"`
@@ -190,30 +190,30 @@ type CacheConfig struct {
 	DegradedOk     bool   `toml:"degraded_ok" json:"degraded_ok"`
 }
 
-// DedupeConfig 管无损去重：URL 归一化、转载合并与单域名配额。
-type DedupeConfig struct {
+// dedupeConfig 管无损去重：URL 归一化、转载合并与单域名配额。
+type dedupeConfig struct {
 	Enabled        bool     `toml:"enabled" json:"enabled"`
 	MaxPerDomain   int      `toml:"max_per_domain" json:"max_per_domain"`
 	MergeReposts   bool     `toml:"merge_reposts" json:"merge_reposts"`
 	TrackingParams []string `toml:"tracking_params" json:"tracking_params"`
 }
 
-// SearchConfig 管搜索结果的可选过滤与展示；阶段一默认全部关闭。
-type SearchConfig struct {
+// searchConfig 管搜索结果的可选过滤与展示；阶段一默认全部关闭。
+type searchConfig struct {
 	MinRerank      *float64 `toml:"min_rerank" json:"min_rerank"`
 	MinAuthority   *int     `toml:"min_authority" json:"min_authority"`
 	MinRerankRatio *float64 `toml:"min_rerank_ratio" json:"min_rerank_ratio"`
 	RankField      bool     `toml:"rank_field" json:"rank_field"`
 }
 
-// SecurityConfig 是可追加的主机名黑名单。IP 网段基线（私网/回环/链路本地/CGNAT 等）
+// securityConfig 是可追加的主机名黑名单。IP 网段基线（私网/回环/链路本地/CGNAT 等）
 // 是代码硬编码的固定纵深防御（见 tools/fetch_validate.go 的 blockedNets），不可配。
-type SecurityConfig struct {
+type securityConfig struct {
 	BlockedHosts []string `toml:"blocked_hosts" json:"blocked_hosts"`
 }
 
-// LogConfig 管结构化日志的级别、轮转与脱敏。
-type LogConfig struct {
+// logConfig 管结构化日志的级别、轮转与脱敏。
+type logConfig struct {
 	Level           string   `toml:"level" json:"level"`
 	Format          string   `toml:"format" json:"format"`
 	Dir             string   `toml:"dir" json:"dir"`
@@ -271,14 +271,14 @@ func (c Config) Source(key string) SourceKind { //nolint:gocritic // 值接收�
 	return SourceUnknown
 }
 
-func defaultApp() AppConfig {
-	return AppConfig{Name: "DeepSeekSearch", Version: "v0.1.0"}
+func defaultApp() appConfig {
+	return appConfig{Name: "DeepSeekSearch", Version: "v0.1.0"}
 }
 
-func defaultServer() ServerConfig {
-	return ServerConfig{
+func defaultServer() serverConfig {
+	return serverConfig{
 		Transport: "streamable-http",
-		Http: ServerHttpConfig{
+		Http: serverHttpConfig{
 			Host:                        "127.0.0.1",
 			Port:                        8765,
 			Path:                        "/mcp",
@@ -296,8 +296,8 @@ func defaultServer() ServerConfig {
 	}
 }
 
-func defaultUpstream() UpstreamConfig {
-	return UpstreamConfig{
+func defaultUpstream() upstreamConfig {
+	return upstreamConfig{
 		BaseURL:          "https://api.deepseek.com",
 		SelfTestOnStart:  false,
 		UserAgent:        "",
@@ -305,29 +305,29 @@ func defaultUpstream() UpstreamConfig {
 	}
 }
 
-func defaultRateLimit() RateLimitConfig {
-	return RateLimitConfig{
+func defaultRateLimit() rateLimitConfig {
+	return rateLimitConfig{
 		MaxInflight: 8,
 		SearchShare: 0.5,
 		MaxWaitMs:   30000,
-		Search:      RateLimitBucketConfig{Rps: 30.0, Burst: 60},
-		Fetch:       RateLimitBucketConfig{Rps: 20.0, Burst: 40},
-		Warn:        RateLimitWarnConfig{WindowS: 60, WarnAtCalls: []int{100, 500, 1000}},
+		Search:      rateLimitBucketConfig{Rps: 30.0, Burst: 60},
+		Fetch:       rateLimitBucketConfig{Rps: 20.0, Burst: 40},
+		Warn:        rateLimitWarnConfig{WindowS: 60, WarnAtCalls: []int{100, 500, 1000}},
 	}
 }
 
-func defaultTimeout() TimeoutConfig {
-	return TimeoutConfig{
+func defaultTimeout() timeoutConfig {
+	return timeoutConfig{
 		DialMs:           5000,
 		TLSHandshakeMs:   5000,
 		ResponseHeaderMs: 30000,
-		Search:           TimeoutToolConfig{PerAttemptMs: 12000, MaxAttempts: 4, TotalTimeoutMs: 67000},
-		Fetch:            TimeoutToolConfig{PerAttemptMs: 45000, MaxAttempts: 2, TotalTimeoutMs: 110000},
+		Search:           timeoutToolConfig{PerAttemptMs: 12000, MaxAttempts: 4, TotalTimeoutMs: 67000},
+		Fetch:            timeoutToolConfig{PerAttemptMs: 45000, MaxAttempts: 2, TotalTimeoutMs: 110000},
 	}
 }
 
-func defaultRetry() RetryConfig {
-	return RetryConfig{
+func defaultRetry() retryConfig {
+	return retryConfig{
 		Enabled:         true,
 		JitterMode:      "fixed_plus_random",
 		FixedMs:         []int{1000, 3000, 8000},
@@ -335,16 +335,16 @@ func defaultRetry() RetryConfig {
 		ParseQPSFrom429: true,
 		AdaptCooldownS:  60,
 		RetryOn:         []string{"429", "408", "502", "503", "504", "net_error", "timeout"},
-		Budget:          RetryBudgetConfig{Enabled: true, Ratio: 0.10, WindowS: 60},
+		Budget:          retryBudgetConfig{Enabled: true, Ratio: 0.10, WindowS: 60},
 	}
 }
 
-func defaultCircuit() CircuitConfig {
-	return CircuitConfig{Enabled: true, FailThreshold: 5, OpenMs: 15000, HalfOpenProbes: 2}
+func defaultCircuit() circuitConfig {
+	return circuitConfig{Enabled: true, FailThreshold: 5, OpenMs: 15000, HalfOpenProbes: 2}
 }
 
-func defaultLimits() LimitsConfig {
-	return LimitsConfig{
+func defaultLimits() limitsConfig {
+	return limitsConfig{
 		MaxTotalChars:      32000,
 		DefaultCount:       10,
 		DefaultDetail:      "summary",
@@ -353,12 +353,12 @@ func defaultLimits() LimitsConfig {
 		InlineMaxChars:     8000,
 		FixedChunkChars:    8000,
 		OutlineMaxSections: 200,
-		Budget:             LimitsBudgetConfig{Enabled: false, MaxCallsPerWindow: 0, WindowS: 3600, MaxCallsPerDay: 0},
+		Budget:             limitsBudgetConfig{Enabled: false, MaxCallsPerWindow: 0, WindowS: 3600, MaxCallsPerDay: 0},
 	}
 }
 
-func defaultCache() CacheConfig {
-	return CacheConfig{
+func defaultCache() cacheConfig {
+	return cacheConfig{
 		Enabled:        true,
 		Backend:        "sqlite",
 		DbPath:         "Data/Cache.db",
@@ -373,8 +373,8 @@ func defaultCache() CacheConfig {
 	}
 }
 
-func defaultDedupe() DedupeConfig {
-	return DedupeConfig{
+func defaultDedupe() dedupeConfig {
+	return dedupeConfig{
 		Enabled:      true,
 		MaxPerDomain: 3,
 		MergeReposts: true,
@@ -387,18 +387,18 @@ func defaultDedupe() DedupeConfig {
 	}
 }
 
-func defaultSearch() SearchConfig {
-	return SearchConfig{RankField: true}
+func defaultSearch() searchConfig {
+	return searchConfig{RankField: true}
 }
 
-func defaultSecurity() SecurityConfig {
-	return SecurityConfig{
+func defaultSecurity() securityConfig {
+	return securityConfig{
 		BlockedHosts: []string{"metadata.google.internal", "metadata", "instance-data"},
 	}
 }
 
-func defaultLog() LogConfig {
-	return LogConfig{
+func defaultLog() logConfig {
+	return logConfig{
 		Level:           "info",
 		Format:          "json",
 		Dir:             "Logs",

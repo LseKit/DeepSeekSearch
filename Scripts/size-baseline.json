@@ -7,32 +7,6 @@
   "f_s3_cyclomatic": {},
   "f_s4_nesting": {},
   "f_s5_package": {
-    "internal/config": {
-      "files": 6,
-      "lines": 1377,
-      "exports": 33,
-      "limits": {
-        "files": 10,
-        "lines": 3000,
-        "exports": 20
-      },
-      "phase": 1,
-      "reason": "配置契约要求 22 个段落类型全部导出（TOML 反序列化 + 装配层读取），首次 F-S5 实测导出 33",
-      "remediation": "把 SourceKind/源追踪与默认值构造收敛到 config/internal 子包，导出面降到 20 以内"
-    },
-    "internal/logging": {
-      "files": 5,
-      "lines": 771,
-      "exports": 38,
-      "limits": {
-        "files": 10,
-        "lines": 3000,
-        "exports": 20
-      },
-      "phase": 1,
-      "reason": "28 个事件常量 + 日志配置/接口全部导出（事件名是 Task-04 的唯一真源）",
-      "remediation": "事件常量迁到 logging/events 子包或改为内部注册表（会动 Task-04 真源，需 ADR）"
-    },
     "internal/resilience": {
       "files": 10,
       "lines": 2248,

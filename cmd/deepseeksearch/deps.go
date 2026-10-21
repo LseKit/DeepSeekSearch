@@ -16,7 +16,6 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
-	"github.com/LseKit/DeepSeekSearch/internal/logging"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 	"github.com/LseKit/DeepSeekSearch/internal/tools"
 )
@@ -39,7 +38,7 @@ func buildDeps(cfg *config.Config, tz *time.Location, clk resilience.Clock, logg
 		cfg.RateLimit.SearchShare, time.Duration(cfg.RateLimit.MaxWaitMs)*time.Millisecond, clk)
 	if err != nil {
 		if closeErr := closeCache(); closeErr != nil {
-			logger.Error(logging.EvErr, "stage", "close_cache_after_limiter_error", "error", closeErr)
+			logger.Error(domain.EvErr, "stage", "close_cache_after_limiter_error", "error", closeErr)
 		}
 		return tools.Deps{}, nil, fmt.Errorf("构造限流器: %w", err)
 	}
@@ -137,7 +136,7 @@ func openCache(cfg *config.Config, rc *resilience.Config, logger *slog.Logger) (
 	if !cfg.Cache.DegradedOk {
 		return nil, fmt.Errorf("缓存打开失败: %w", err)
 	}
-	logger.Warn(logging.EvWarnCacheDegraded, "error", err)
+	logger.Warn(domain.EvWarnCacheDegraded, "error", err)
 	return nil, nil
 }
 

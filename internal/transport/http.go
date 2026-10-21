@@ -20,7 +20,6 @@ import (
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
-	"github.com/LseKit/DeepSeekSearch/internal/logging"
 )
 
 const (
@@ -62,7 +61,7 @@ func (h *httpHandler) Serve(ctx context.Context, srv *mcp.Server) error {
 	}
 
 	// config_sha256 由装配层经 logger.With 注入，这条日志自动带上它。
-	h.log.Info(logging.EvAppReady, "transport", "streamable-http",
+	h.log.Info(domain.EvAppReady, "transport", "streamable-http",
 		"addr", ln.Addr().String(), "path", h.cfg.Server.Http.Path)
 
 	serveErr := make(chan error, 1)

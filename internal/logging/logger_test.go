@@ -21,17 +21,18 @@ import (
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
+	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
 var eventNameRe = regexp.MustCompile(`^[a-z][a-z0-9_.]*$`)
 
 var allEventNames = []string{
-	EvAppStart, EvAppConfig, EvAppDB, EvAppTransport, EvAppReady, EvAppStop,
-	EvCallBegin, EvCallCache, EvCallLimitWait, EvCallUpstream, EvCallUpstreamDone,
-	EvCallRetry, EvCallCircuit, EvCallDedupe, EvCallSection, EvCallEnd,
-	EvErr, EvWarnSlow, EvWarnBudget, EvWarnCacheDegraded, EvWarnCacheOversize,
-	EvWarnCacheCommitFailed, EvWarnCacheKeyCollision, EvInfoCacheRecovered, EvWarnLogQuota,
-	EvSSRFBlocked, EvCachePrune, EvLogRotate,
+	domain.EvAppStart, domain.EvAppConfig, domain.EvAppDB, domain.EvAppTransport, domain.EvAppReady, domain.EvAppStop,
+	domain.EvCallBegin, domain.EvCallCache, domain.EvCallLimitWait, domain.EvCallUpstream, domain.EvCallUpstreamDone,
+	domain.EvCallRetry, domain.EvCallCircuit, domain.EvCallDedupe, domain.EvCallSection, domain.EvCallEnd,
+	domain.EvErr, domain.EvWarnSlow, domain.EvWarnBudget, domain.EvWarnCacheDegraded, domain.EvWarnCacheOversize,
+	domain.EvWarnCacheCommitFailed, domain.EvWarnCacheKeyCollision, domain.EvInfoCacheRecovered, domain.EvWarnLogQuota,
+	domain.EvSSRFBlocked, domain.EvCachePrune, domain.EvLogRotate,
 }
 
 func TestNew(t *testing.T) {
@@ -42,15 +43,15 @@ func TestNew(t *testing.T) {
 	cfg.AlsoStderr = false
 	logger, closer := newLogger(t, cfg)
 
-	logger.Info(EvAppStart, "tool", "ds_search")
+	logger.Info(domain.EvAppStart, "tool", "ds_search")
 	if err := closer.Close(); err != nil {
 		t.Fatalf("Close() = %v", err)
 	}
 
 	line := onlyLogContent(t, cfg.Dir)
 	record := parseJSONRecord(t, line)
-	if record["msg"] != EvAppStart {
-		t.Fatalf("msg = %v, want %s", record["msg"], EvAppStart)
+	if record["msg"] != domain.EvAppStart {
+		t.Fatalf("msg = %v, want %s", record["msg"], domain.EvAppStart)
 	}
 	if record["config_sha256"] != cfg.ConfigSha {
 		t.Fatalf("config_sha256 = %v, want %s", record["config_sha256"], cfg.ConfigSha)
@@ -81,7 +82,7 @@ func TestNew_NoStdout(t *testing.T) {
 	cfg := testConfig(t, clk)
 	cfg.AlsoStderr = false
 	logger, closer := newLogger(t, cfg)
-	logger.Info(EvAppStart)
+	logger.Info(domain.EvAppStart)
 	if err := closer.Close(); err != nil {
 		t.Fatalf("Close() = %v", err)
 	}
@@ -108,7 +109,7 @@ func TestNew_LineTimeFormat(t *testing.T) {
 	cfg.TsFormat = "2006/01/02 15:04:05"
 	logger, closer := newLogger(t, cfg)
 
-	logger.Info(EvAppStart)
+	logger.Info(domain.EvAppStart)
 	if err := closer.Close(); err != nil {
 		t.Fatalf("Close() = %v", err)
 	}
@@ -196,35 +197,35 @@ func TestEventRequiredFields(t *testing.T) {
 	t.Parallel()
 
 	cases := []eventCase{
-		{name: "app.start", event: EvAppStart},
-		{name: "app.config", event: EvAppConfig},
-		{name: "app.db", event: EvAppDB},
-		{name: "app.transport", event: EvAppTransport},
-		{name: "app.ready", event: EvAppReady},
-		{name: "app.stop", event: EvAppStop, extra: []string{"dropped_lines"}},
-		{name: "call.begin", event: EvCallBegin, callID: true, extra: []string{"tool"}},
-		{name: "call.cache", event: EvCallCache, callID: true, extra: []string{"tool"}},
-		{name: "call.limit.wait", event: EvCallLimitWait, callID: true, extra: []string{"tool"}},
-		{name: "call.upstream", event: EvCallUpstream, callID: true, extra: []string{"tool"}},
-		{name: "call.upstream.done", event: EvCallUpstreamDone, callID: true, extra: []string{"tool", "ms"}},
-		{name: "call.retry", event: EvCallRetry, callID: true, extra: []string{"tool"}},
-		{name: "call.circuit", event: EvCallCircuit, callID: true, extra: []string{"tool"}},
-		{name: "call.dedupe", event: EvCallDedupe, callID: true, extra: []string{"tool"}},
-		{name: "call.section", event: EvCallSection, callID: true, extra: []string{"tool"}},
-		{name: "call.end", event: EvCallEnd, callID: true, billed: true, extra: []string{"tool", "ms"}},
-		{name: "err调用上下文", event: EvErr, callID: true, extra: []string{"code", "code_name"}, level: slog.LevelError},
-		{name: "err后台上下文", event: EvErr, extra: []string{"code", "code_name"}, level: slog.LevelError},
-		{name: "warn.slow", event: EvWarnSlow, callID: true, extra: []string{"tool", "ms"}, level: slog.LevelWarn},
-		{name: "warn.budget", event: EvWarnBudget, callID: true, extra: []string{"tool", "ms"}, level: slog.LevelWarn},
-		{name: "warn.cache_degraded", event: EvWarnCacheDegraded, level: slog.LevelWarn},
-		{name: "warn.cache_oversize", event: EvWarnCacheOversize, extra: []string{"key_hash", "bytes", "limit_kb"}, level: slog.LevelWarn},
-		{name: "info.cache_recovered", event: EvInfoCacheRecovered},
-		{name: "warn.cache_commit_failed", event: EvWarnCacheCommitFailed, extra: []string{"key_hash", "err"}, level: slog.LevelWarn},
-		{name: "warn.cache_key_collision", event: EvWarnCacheKeyCollision, extra: []string{"key_hash", "url_sha256"}, level: slog.LevelWarn},
-		{name: "warn.log_quota", event: EvWarnLogQuota, extra: []string{"dropped_lines"}, level: slog.LevelWarn},
-		{name: "ssrf.blocked", event: EvSSRFBlocked, callID: true, extra: []string{"url"}},
-		{name: "cache.prune", event: EvCachePrune},
-		{name: "log.rotate", event: EvLogRotate, extra: []string{"reason", "dropped_lines"}},
+		{name: "app.start", event: domain.EvAppStart},
+		{name: "app.config", event: domain.EvAppConfig},
+		{name: "app.db", event: domain.EvAppDB},
+		{name: "app.transport", event: domain.EvAppTransport},
+		{name: "app.ready", event: domain.EvAppReady},
+		{name: "app.stop", event: domain.EvAppStop, extra: []string{"dropped_lines"}},
+		{name: "call.begin", event: domain.EvCallBegin, callID: true, extra: []string{"tool"}},
+		{name: "call.cache", event: domain.EvCallCache, callID: true, extra: []string{"tool"}},
+		{name: "call.limit.wait", event: domain.EvCallLimitWait, callID: true, extra: []string{"tool"}},
+		{name: "call.upstream", event: domain.EvCallUpstream, callID: true, extra: []string{"tool"}},
+		{name: "call.upstream.done", event: domain.EvCallUpstreamDone, callID: true, extra: []string{"tool", "ms"}},
+		{name: "call.retry", event: domain.EvCallRetry, callID: true, extra: []string{"tool"}},
+		{name: "call.circuit", event: domain.EvCallCircuit, callID: true, extra: []string{"tool"}},
+		{name: "call.dedupe", event: domain.EvCallDedupe, callID: true, extra: []string{"tool"}},
+		{name: "call.section", event: domain.EvCallSection, callID: true, extra: []string{"tool"}},
+		{name: "call.end", event: domain.EvCallEnd, callID: true, billed: true, extra: []string{"tool", "ms"}},
+		{name: "err调用上下文", event: domain.EvErr, callID: true, extra: []string{"code", "code_name"}, level: slog.LevelError},
+		{name: "err后台上下文", event: domain.EvErr, extra: []string{"code", "code_name"}, level: slog.LevelError},
+		{name: "warn.slow", event: domain.EvWarnSlow, callID: true, extra: []string{"tool", "ms"}, level: slog.LevelWarn},
+		{name: "warn.budget", event: domain.EvWarnBudget, callID: true, extra: []string{"tool", "ms"}, level: slog.LevelWarn},
+		{name: "warn.cache_degraded", event: domain.EvWarnCacheDegraded, level: slog.LevelWarn},
+		{name: "warn.cache_oversize", event: domain.EvWarnCacheOversize, extra: []string{"key_hash", "bytes", "limit_kb"}, level: slog.LevelWarn},
+		{name: "info.cache_recovered", event: domain.EvInfoCacheRecovered},
+		{name: "warn.cache_commit_failed", event: domain.EvWarnCacheCommitFailed, extra: []string{"key_hash", "err"}, level: slog.LevelWarn},
+		{name: "warn.cache_key_collision", event: domain.EvWarnCacheKeyCollision, extra: []string{"key_hash", "url_sha256"}, level: slog.LevelWarn},
+		{name: "warn.log_quota", event: domain.EvWarnLogQuota, extra: []string{"dropped_lines"}, level: slog.LevelWarn},
+		{name: "ssrf.blocked", event: domain.EvSSRFBlocked, callID: true, extra: []string{"url"}},
+		{name: "cache.prune", event: domain.EvCachePrune},
+		{name: "log.rotate", event: domain.EvLogRotate, extra: []string{"reason", "dropped_lines"}},
 	}
 
 	clk := newFakeClock(time.Date(2026, 10, 20, 12, 0, 0, 0, testTZ))
@@ -287,8 +288,8 @@ func TestSlow(t *testing.T) {
 
 	Slow(logger, 100, "ds_search", 101, "call_id", "c1")
 	record := parseJSONRecord(t, buf.String())
-	if record["msg"] != EvWarnSlow {
-		t.Fatalf("msg = %v, want %s", record["msg"], EvWarnSlow)
+	if record["msg"] != domain.EvWarnSlow {
+		t.Fatalf("msg = %v, want %s", record["msg"], domain.EvWarnSlow)
 	}
 	if record["tool"] != "ds_search" || record["call_id"] != "c1" {
 		t.Fatalf("Slow 字段不正确: %v", record)

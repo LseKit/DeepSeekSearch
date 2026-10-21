@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"io"
 	"io/fs"
 	"os"
@@ -22,8 +23,8 @@ import (
 const (
 	dateLayout     = "2006-01-02"
 	nameTimeLayout = "20060102_150405"
-	evLogRotate    = EvLogRotate
-	evWarnLogQuota = EvWarnLogQuota
+	evLogRotate    = domain.EvLogRotate
+	evWarnLogQuota = domain.EvWarnLogQuota
 )
 
 // Clock 是日志包需要的最小时间接口，由装配层注入。

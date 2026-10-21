@@ -134,7 +134,7 @@ func (c *Config) validateRateLimit() []error {
 	return errs
 }
 
-func validateBucket(name string, bucket RateLimitBucketConfig) []error {
+func validateBucket(name string, bucket rateLimitBucketConfig) []error {
 	var errs []error
 	if bucket.Rps <= 0 {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid, "%s.rps 必须 > 0，实际 %v", name, bucket.Rps))
@@ -205,7 +205,7 @@ func (c *Config) validateTimeout() []error {
 	return errs
 }
 
-func (c *Config) validateToolTimeout(name string, t TimeoutToolConfig) []error {
+func (c *Config) validateToolTimeout(name string, t timeoutToolConfig) []error {
 	var errs []error
 	if t.PerAttemptMs < 1 {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid, "%s.per_attempt_ms 必须 ≥1，实际 %d", name, t.PerAttemptMs))
@@ -406,7 +406,7 @@ func (c *Config) collectWarnings() []string {
 	return warnings
 }
 
-func (c *Config) timeoutWarnings(name string, t TimeoutToolConfig) []string {
+func (c *Config) timeoutWarnings(name string, t timeoutToolConfig) []string {
 	var warnings []string
 	layer := c.Timeout.DialMs + c.Timeout.TLSHandshakeMs + c.Timeout.ResponseHeaderMs
 	if t.PerAttemptMs < layer {

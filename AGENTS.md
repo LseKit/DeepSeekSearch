@@ -143,7 +143,7 @@ GitHubSrc/
 | 新增 MCP 工具 | 新文件 `internal/tools/xxx.go` + `registry.go` 加 1 行 | `transport` |
 | 新增传输 | 新文件 `internal/transport/xxx.go` + `Build()` 加 case | `tools` `deepseek` |
 | 改上游请求体 | `internal/deepseek/request.go` + `docs/Contract/12-数据契约.md` §一 | 别在 `tools` 里拼 JSON |
-| 改日志事件名 | `internal/logging/events.go` + `docs/Tasks/Task-04` A-02 | 三处文档只引用不重写 |
+| 改日志事件名 | `internal/domain/events.go` + `docs/Tasks/Task-04` A-02 | 三处文档只引用不重写 |
 
 ### 4.2 依赖方向（单向，MUST NOT 反向）
 

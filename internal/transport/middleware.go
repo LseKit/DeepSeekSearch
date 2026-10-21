@@ -19,7 +19,6 @@ import (
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
-	"github.com/LseKit/DeepSeekSearch/internal/logging"
 )
 
 // statusWriter 必须实现 Flush 与 Unwrap。
@@ -120,7 +119,7 @@ func recoverMW(log *slog.Logger, next http.Handler) http.Handler {
 	return &middleware{name: "recover", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Error(logging.EvErr, "panic", fmt.Sprint(rec), "stack", string(debug.Stack()),
+				log.Error(domain.EvErr, "panic", fmt.Sprint(rec), "stack", string(debug.Stack()),
 					"method", r.Method, "path", r.URL.Path)
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
@@ -144,7 +143,7 @@ func accessLog(log *slog.Logger, cfg *config.Config, next http.Handler) http.Han
 		log.Info("http.access", "method", r.Method, "path", r.URL.Path,
 			"status", code, "bytes", sw.n, "ms", ms)
 		if cfg.Log.SlowMs > 0 && ms > int64(cfg.Log.SlowMs) {
-			log.Warn(logging.EvWarnSlow, "method", r.Method, "path", r.URL.Path,
+			log.Warn(domain.EvWarnSlow, "method", r.Method, "path", r.URL.Path,
 				"ms", ms, "slow_ms", cfg.Log.SlowMs)
 		}
 	})}
@@ -274,6 +273,6 @@ func writeError(w http.ResponseWriter, log *slog.Logger, status, code int, detai
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if _, err := w.Write(raw); err != nil {
-		log.Warn(logging.EvErr, "stage", "write_error_response", "error", err)
+		log.Warn(domain.EvErr, "stage", "write_error_response", "error", err)
 	}
 }

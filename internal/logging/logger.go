@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
+	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
 // New 构造日志器。返回值里的 closer MUST 在进程退出前调用，
@@ -80,7 +81,7 @@ func Slow(logger *slog.Logger, slowMs int, tool string, ms int64, attrs ...any) 
 	args := make([]any, 0, 4+len(attrs))
 	args = append(args, "tool", tool, "ms", ms)
 	args = append(args, attrs...)
-	logger.Warn(EvWarnSlow, args...)
+	logger.Warn(domain.EvWarnSlow, args...)
 }
 
 func toSlogLevel(level string) slog.Level {

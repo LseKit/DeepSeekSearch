@@ -170,7 +170,7 @@ func serve(cfg *config.Config, tz *time.Location, stop <-chan struct{}, newClien
 		return failRuntime(logger, closer, closeCache, stderr, "build_transport", err)
 	}
 
-	logger.Info(logging.EvAppStart, "version", build.Version, "commit", build.Commit,
+	logger.Info(domain.EvAppStart, "version", build.Version, "commit", build.Commit,
 		"build", build.BuildTime, "go", build.GoVersion, "pid", os.Getpid())
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -191,10 +191,10 @@ func watchStop(ctx context.Context, stop <-chan struct{}, cancel context.CancelF
 // failRuntime 处理装配失败：记日志、按顺序关缓存与日志，返回退出码 1。
 func failRuntime(logger *slog.Logger, closer io.Closer, closeCache func() error,
 	stderr io.Writer, stage string, cause error) int {
-	logger.Error(logging.EvErr, "stage", stage, "error", cause)
+	logger.Error(domain.EvErr, "stage", stage, "error", cause)
 	if closeCache != nil {
 		if closeErr := closeCache(); closeErr != nil {
-			logger.Error(logging.EvErr, "stage", "close_cache_after_"+stage, "error", closeErr)
+			logger.Error(domain.EvErr, "stage", "close_cache_after_"+stage, "error", closeErr)
 		}
 	}
 	if closeErr := closer.Close(); closeErr != nil {
@@ -209,23 +209,23 @@ func shutdown(logger *slog.Logger, closer io.Closer, writer *logging.RotatingWri
 	sf resilience.Singleflight, closeCache func() error, serveErr error) int {
 	code := 0
 	if serveErr != nil {
-		logger.Error(logging.EvErr, "stage", "serve", "error", serveErr)
+		logger.Error(domain.EvErr, "stage", "serve", "error", serveErr)
 		code = 1
 	}
 	dropped := int64(0)
 	if writer != nil {
 		dropped = writer.DroppedLines()
 	}
-	logger.Info(logging.EvAppStop, "dropped_lines", dropped, "exit_code", code)
+	logger.Info(domain.EvAppStop, "dropped_lines", dropped, "exit_code", code)
 
 	relCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if _, err := sf.ReleaseAll(relCtx, ""); err != nil {
-		logger.Error(logging.EvErr, "stage", "release_leases", "error", err)
+		logger.Error(domain.EvErr, "stage", "release_leases", "error", err)
 		code = 1
 	}
 	cancel()
 	if err := closeCache(); err != nil {
-		logger.Error(logging.EvErr, "stage", "close_cache", "error", err)
+		logger.Error(domain.EvErr, "stage", "close_cache", "error", err)
 		code = 1
 	}
 	if err := closer.Close(); err != nil {

@@ -39,7 +39,7 @@
 
 | # | 要求 |
 |:-:|---|
-| 1 | 20 个 struct：`Config` + `AppConfig` `ServerConfig` `ServerHttpConfig` `UpstreamConfig` `RateLimitConfig` `RateLimitBucketConfig` `RateLimitWarnConfig` `TimeoutConfig` `TimeoutToolConfig` `RetryConfig` `RetryBudgetConfig` `CircuitConfig` `LimitsConfig` `LimitsBudgetConfig` `CacheConfig` `DedupeConfig` `SearchConfig` `SecurityConfig` `LogConfig`。🔴 `HedgeConfig` **不存在**：`[hedge]` 已整段移出阶段一（DEBT-007），按 A-02 要求必须被当作未知键拒绝 |
+| 1 | 19 个 struct：`Config`（导出）+ `appConfig` `serverConfig` `serverHttpConfig` `upstreamConfig` `rateLimitConfig` `rateLimitBucketConfig` `rateLimitWarnConfig` `timeoutConfig` `timeoutToolConfig` `retryConfig` `retryBudgetConfig` `circuitConfig` `limitsConfig` `limitsBudgetConfig` `cacheConfig` `dedupeConfig` `searchConfig` `securityConfig` `logConfig`（段落类型**不导出**，外部只经字段访问；DEBT-010）。🔴 `HedgeConfig` **不存在**：`[hedge]` 已整段移出阶段一（DEBT-007），按 A-02 要求必须被当作未知键拒绝 |
 | 2 | `ApiKey` 与 `HttpToken` 字段 tag 为 `toml:"-" json:"-"`（MUST NOT 出现在配置解析与任何序列化） |
 | 3 | `Default() Config` 返回**与文档 §三 默认值列逐格相同**的配置 |
 | 4 | `Redacted() Config` 把 `ApiKey`/`HttpToken` 换成 `"***"`（为空时也换，避免泄漏「是否配置」） |
@@ -61,12 +61,12 @@
 // ServerConfig 管「怎么和客户端说话」。
 type ServerConfig struct {
     Transport string           `toml:"transport"` // "stdio" | "streamable-http"
-    Http      ServerHttpConfig `toml:"http"`
+    Http      serverHttpConfig `toml:"http"`
 }
 
-// ServerHttpConfig 只在 Transport == "streamable-http" 时生效。
+// serverHttpConfig 只在 Transport == "streamable-http" 时生效。
 // 默认值全部指向「最安全」的一端：只听回环、开 Origin 校验、开 Host 校验、不鉴权。
-type ServerHttpConfig struct {
+type serverHttpConfig struct {
     Host                    string   `toml:"host"`
     Port                    int      `toml:"port"`
     Path                    string   `toml:"path"`

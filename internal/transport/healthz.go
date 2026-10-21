@@ -14,7 +14,6 @@ import (
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
-	"github.com/LseKit/DeepSeekSearch/internal/logging"
 )
 
 type healthzCache struct {
@@ -85,7 +84,7 @@ func healthzHandler(cfg *config.Config, build domain.BuildInfo, startedAt time.T
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(raw); err != nil {
-			log.Warn(logging.EvErr, "stage", "write_healthz_response", "error", err)
+			log.Warn(domain.EvErr, "stage", "write_healthz_response", "error", err)
 		}
 	})}
 }
