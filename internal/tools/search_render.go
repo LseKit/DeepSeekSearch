@@ -61,20 +61,7 @@ func (h *searchHandler) render(env cachedSearchEnvelope, fromCache bool) (res *m
 	items := env.Response.Results
 	warnings := append([]string{}, h.params.Warnings...)
 
-	if h.deps.Cfg.Dedupe.Enabled {
-		var stats domain.DedupeStats
-		items, stats = domain.Dedupe(items, h.params.MaxPerDomain, h.deps.Cfg.Dedupe.TrackingParams)
-		h.logger.Info("call.dedupe",
-			"dropped_url", stats.DroppedURL,
-			"dropped_repost", stats.DroppedRepost,
-			"dropped_domain", stats.DroppedDomain)
-		if stats.DroppedURL+stats.DroppedRepost+stats.DroppedDomain > 0 {
-			warnings = append(warnings, fmt.Sprintf(
-				"去重丢弃 %d 条（URL %d / 转载 %d / 域名配额 %d）",
-				stats.DroppedURL+stats.DroppedRepost+stats.DroppedDomain,
-				stats.DroppedURL, stats.DroppedRepost, stats.DroppedDomain))
-		}
-	}
+	items, warnings = h.applyDedupe(items, warnings)
 
 	items, removed, scoreRange := filterByMin(items, &h.params)
 	if removed > 0 {
@@ -122,6 +109,26 @@ func (h *searchHandler) render(env cachedSearchEnvelope, fromCache bool) (res *m
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}},
 	}, total, len(rendered)
+}
+
+// applyDedupe 执行三层去重并把丢弃统计写进日志与 warnings。
+func (h *searchHandler) applyDedupe(items []domain.SearchResult, warnings []string) ([]domain.SearchResult, []string) {
+	if !h.deps.Cfg.Dedupe.Enabled {
+		return items, warnings
+	}
+	var stats domain.DedupeStats
+	items, stats = domain.Dedupe(items, h.params.MaxPerDomain, h.deps.Cfg.Dedupe.TrackingParams)
+	h.logger.Info("call.dedupe",
+		"dropped_url", stats.DroppedURL,
+		"dropped_repost", stats.DroppedRepost,
+		"dropped_domain", stats.DroppedDomain)
+	dropped := stats.DroppedURL + stats.DroppedRepost + stats.DroppedDomain
+	if dropped > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"去重丢弃 %d 条（URL %d / 转载 %d / 域名配额 %d）",
+			dropped, stats.DroppedURL, stats.DroppedRepost, stats.DroppedDomain))
+	}
+	return items, warnings
 }
 
 func (h *searchHandler) renderItem(item *domain.SearchResult, now time.Time) searchOutputItem {

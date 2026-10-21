@@ -85,34 +85,39 @@ func pruneByAge(dir, prefix string, today time.Time, maxAge, maxBackups int, com
 	if maxBackups < 0 {
 		maxBackups = 0
 	}
-
 	todayDate := dateOnly(today)
-	var oldFiles []parsedLogName
+	cutoff := todayDate.AddDate(0, 0, -(maxAge - 1))
+	kept, removed, errs := removeOldFiles(dir, selectOldFiles(entries, prefix, todayDate), cutoff)
+	kept, trimmed, trimErrs := trimAndCompress(dir, kept, maxBackups, compress)
+	return removed + trimmed, errors.Join(append(errs, trimErrs...)...)
+}
+
+// selectOldFiles 选出非今天、同前缀的日志文件，并按日期升序。
+func selectOldFiles(entries []fs.DirEntry, prefix string, todayDate time.Time) []parsedLogName {
+	oldFiles := make([]parsedLogName, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
-		parsed, ok := parseLogName(entry.Name(), today.Location())
-		if !ok || parsed.prefix != prefix {
-			continue
-		}
-		if sameDate(parsed.date, todayDate) {
+		parsed, ok := parseLogName(entry.Name(), todayDate.Location())
+		if !ok || parsed.prefix != prefix || sameDate(parsed.date, todayDate) {
 			continue
 		}
 		oldFiles = append(oldFiles, parsed)
 	}
-	sort.Slice(oldFiles, func(i, j int) bool {
-		return oldFiles[i].date.Before(oldFiles[j].date)
-	})
+	sort.Slice(oldFiles, func(i, j int) bool { return oldFiles[i].date.Before(oldFiles[j].date) })
+	return oldFiles
+}
 
-	cutoff := todayDate.AddDate(0, 0, -(maxAge - 1))
+// removeOldFiles 删除早于 cutoff 的文件，返回保留项。
+func removeOldFiles(dir string, files []parsedLogName, cutoff time.Time) ([]parsedLogName, int, []error) {
+	kept := make([]parsedLogName, 0, len(files))
 	removed := 0
 	var errs []error
-	kept := make([]parsedLogName, 0, len(oldFiles))
-	for _, file := range oldFiles {
+	for _, file := range files {
 		if file.date.Before(cutoff) {
-			if removeErr := removeIfExists(filepath.Join(dir, file.name)); removeErr != nil {
-				errs = append(errs, removeErr)
+			if err := removeIfExists(filepath.Join(dir, file.name)); err != nil {
+				errs = append(errs, err)
 				continue
 			}
 			removed++
@@ -120,30 +125,35 @@ func pruneByAge(dir, prefix string, today time.Time, maxAge, maxBackups int, com
 		}
 		kept = append(kept, file)
 	}
+	return kept, removed, errs
+}
 
+// trimAndCompress 执行 maxBackups 兜底与压缩。
+func trimAndCompress(dir string, kept []parsedLogName, maxBackups int, compress bool) ([]parsedLogName, int, []error) {
+	removed := 0
+	var errs []error
 	if len(kept) > maxBackups {
 		drop := len(kept) - maxBackups
 		for _, file := range kept[:drop] {
-			if removeErr := removeIfExists(filepath.Join(dir, file.name)); removeErr != nil {
-				errs = append(errs, removeErr)
+			if err := removeIfExists(filepath.Join(dir, file.name)); err != nil {
+				errs = append(errs, err)
 				continue
 			}
 			removed++
 		}
 		kept = kept[drop:]
 	}
-
 	if compress {
 		for _, file := range kept {
 			if file.compressed {
 				continue
 			}
-			if gzipErr := gzipFile(filepath.Join(dir, file.name)); gzipErr != nil {
-				errs = append(errs, gzipErr)
+			if err := gzipFile(filepath.Join(dir, file.name)); err != nil {
+				errs = append(errs, err)
 			}
 		}
 	}
-	return removed, errors.Join(errs...)
+	return kept, removed, errs
 }
 
 func dateOnly(t time.Time) time.Time {

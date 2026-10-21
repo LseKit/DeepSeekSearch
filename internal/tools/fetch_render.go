@@ -74,35 +74,9 @@ func (h *fetchHandler) render(entry *cachedFetchEntry, fromCache bool) (*mcp.Cal
 	setFetchCacheMeta(&out, entry.CapturedAt, fromCache, h.deps.Clock.Now())
 
 	// 12 号 §4.1：warnings 必带 —— 空数组也要出现，避免客户端写两套分支。
-	warnings := make([]string, 0, 2)
-	switch mode {
-	case inlineMode:
-		body, truncated := budgetCut(content, h.params.MaxChars)
-		out.Content = domain.WrapUntrusted(entry.URL, body)
-		out.Truncated = truncated
-		if truncated {
-			out.TruncatedBy = "budget"
-		}
-	case sectionMode:
-		body, err := h.selectSections(content)
-		if err != nil {
-			return nil, mode, err
-		}
-		body, truncated := budgetCut(body, h.params.MaxChars)
-		out.Content = domain.WrapUntrusted(entry.URL, body)
-		out.Truncated = truncated
-		if truncated {
-			out.TruncatedBy = "budget"
-		}
-	case outlineMode:
-		sections, kind, truncated, outlineWarnings := h.renderOutline(entry.URL, content)
-		out.Sections = sections
-		out.OutlineKind = kind
-		out.Truncated = truncated
-		if truncated {
-			out.TruncatedBy = "budget"
-		}
-		warnings = append(warnings, outlineWarnings...)
+	warnings, err := h.applyMode(&out, content, entry.URL)
+	if err != nil {
+		return nil, mode, err
 	}
 	out.Warnings = warnings
 
@@ -136,6 +110,35 @@ func (h *fetchHandler) selectMode(totalChars int) string {
 		return inlineMode
 	}
 	return outlineMode
+}
+
+// applyMode 按 inline/section/outline 三种模式填充正文与截断标记。
+func (h *fetchHandler) applyMode(out *fetchOutput, content, source string) ([]string, error) {
+	warnings := make([]string, 0, 2)
+	switch out.Mode {
+	case inlineMode:
+		body, truncated := budgetCut(content, h.params.MaxChars)
+		out.Content = domain.WrapUntrusted(source, body)
+		out.Truncated = truncated
+	case sectionMode:
+		body, err := h.selectSections(content)
+		if err != nil {
+			return nil, err
+		}
+		body, truncated := budgetCut(body, h.params.MaxChars)
+		out.Content = domain.WrapUntrusted(source, body)
+		out.Truncated = truncated
+	case outlineMode:
+		sections, kind, truncated, outlineWarnings := h.renderOutline(source, content)
+		out.Sections = sections
+		out.OutlineKind = kind
+		out.Truncated = truncated
+		warnings = append(warnings, outlineWarnings...)
+	}
+	if out.Truncated {
+		out.TruncatedBy = "budget"
+	}
+	return warnings, nil
 }
 
 func (h *fetchHandler) renderOutline(source, content string) (sections []fetchSectionOutput, kind string, truncated bool, warnings []string) {

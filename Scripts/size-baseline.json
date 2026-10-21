@@ -3,43 +3,7 @@
   "frozen_at": "2026-10-21",
   "note": "ADR-017：存量规模违规冻结，只减不增；新增代码 MUST 达标。DEBT-010 清零后删除本文件。",
   "f_s1_file_lines": {},
-  "f_s2_function_lines": {
-    "internal/logging/rotate.go:pruneByAge": {
-      "value": 68,
-      "limit": 50,
-      "phase": 1,
-      "reason": "Task-04 实现的轮转清理含按龄/按量/压缩三路分支，首次 F-S2 实测 68 行",
-      "remediation": "提取 selectExpired() 与 compressKept() 两个子函数，保持清理顺序不变"
-    },
-    "internal/resilience/singleflight.go:lead": {
-      "value": 72,
-      "limit": 50,
-      "phase": 1,
-      "reason": "Task-07 的 singleflight 主流程把租约续期/等待/超时/清理写在一个函数里",
-      "remediation": "提取 waitFollowers() 与 renewLease()，主流程只保留状态机分支"
-    },
-    "internal/tools/fetch_handler.go:handleFetch": {
-      "value": 68,
-      "limit": 50,
-      "phase": 1,
-      "reason": "Task-09 的 ds_fetch 主流程把校验、缓存、上游调用、渲染四段平铺",
-      "remediation": "按四段提取私有方法，保持 ctx/预算参数透传"
-    },
-    "internal/tools/fetch_render.go:render": {
-      "value": 57,
-      "limit": 50,
-      "phase": 1,
-      "reason": "Task-09 的渲染含预算截断与分节回退两套分支",
-      "remediation": "提取 truncateWithBudget() 与 fallbackSection()"
-    },
-    "internal/tools/search_render.go:render": {
-      "value": 62,
-      "limit": 50,
-      "phase": 1,
-      "reason": "Task-08 的渲染含去重统计、分数区间说明与结果格式化",
-      "remediation": "提取 renderResult() 与 dedupeNotice()，输出字节 MUST 保持不变"
-    }
-  },
+  "f_s2_function_lines": {},
   "f_s3_cyclomatic": {
     "internal/logging/rotate.go:pruneByAge": {
       "value": 20,
@@ -160,13 +124,6 @@
       "reason": "Task-11 A-03 首次实测；写入含轮转/配额/丢弃计数",
       "remediation": "提取 rotateIfNeeded() 与 recordDrop()"
     },
-    "internal/tools/fetch_render.go:render": {
-      "value": 11,
-      "limit": 10,
-      "phase": 1,
-      "reason": "Task-11 A-03 首次实测；渲染含预算与回退",
-      "remediation": "与 F-S2 同一拆分：truncateWithBudget()/fallbackSection()"
-    },
     "internal/tools/fetch_validate.go:lookupSnapshot": {
       "value": 11,
       "limit": 10,
@@ -222,19 +179,6 @@
       "phase": 1,
       "reason": "5 个接口 + 诊断类型 + 构造函数全部导出（Contract 11 §四 冻结）",
       "remediation": "按 ratelimit/cache/circuit 拆子包，接口留在 resilience 根（会动 Contract 11）"
-    },
-    "internal/tools": {
-      "files": 12,
-      "lines": 2987,
-      "exports": 11,
-      "limits": {
-        "files": 10,
-        "lines": 3000,
-        "exports": 20
-      },
-      "phase": 1,
-      "reason": "Contract 10 §5.1 选定方案 B（合并 render/usage），实现时 render 文件未合并，实测 12 文件",
-      "remediation": "把 search_render.go/fetch_render.go 并入对应 handler 并先拆长函数，避免合并后撞 F-S1"
     }
   }
 }

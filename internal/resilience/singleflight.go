@@ -227,27 +227,10 @@ func (s *singleflight) lead(
 
 	deadline := time.Now().Add(time.Duration(waitMs) * time.Millisecond)
 	for {
-		if cached, hit, cacheErr := s.cached(ctx, storageKey); cacheErr == nil && hit {
-			if bytes, oversize := decodeOversize(cached); oversize {
-				current.err = oversizeError(userKey, bytes)
-				return
-			}
-			current.val = cached
+		if s.fillFromCache(ctx, storageKey, userKey, current) {
 			return
 		}
-		if s.leases == nil {
-			s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
-			return
-		}
-		acquired, acquireErr := s.leases.acquireLease(
-			ctx, storageKey, s.owner, s.clk.Now().Unix()+s.leaseSeconds(storageKey))
-		if acquireErr != nil {
-			s.logLeaseWarning("lease_acquire", acquireErr)
-			s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
-			return
-		}
-		if acquired {
-			s.runAcquired(ctx, storageKey, userKey, current, fn, commit, finish)
+		if s.acquireOwnership(ctx, storageKey, userKey, current, fn, commit, finish) {
 			return
 		}
 		lease, found, readErr := s.leases.readLease(ctx, storageKey)
@@ -261,22 +244,10 @@ func (s *singleflight) lead(
 			return
 		}
 		if !found {
-			// owner 已删除租约：下一轮先读缓存；缓存仍空则立即重抢租约（A-02 4.1）。
 			continue
 		}
-		now := s.clk.Now().Unix()
-		if lease.ExpiresAt < now {
-			preempted, preemptErr := s.leases.preemptLease(
-				ctx, storageKey, s.owner, now+s.leaseSeconds(storageKey), now)
-			if preemptErr != nil {
-				s.logLeaseWarning("lease_preempt", preemptErr)
-				s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
-				return
-			}
-			if preempted {
-				s.runAcquired(ctx, storageKey, userKey, current, fn, commit, finish)
-				return
-			}
+		if s.tryPreempt(ctx, storageKey, userKey, current, lease, fn, commit, finish) {
+			return
 		}
 		if time.Now().After(deadline) {
 			current.err = waitTimeoutError(userKey, waitMs)
@@ -289,6 +260,66 @@ func (s *singleflight) lead(
 		case <-time.After(s.pollInterval):
 		}
 	}
+}
+
+// fillFromCache 命中缓存时填充 current 并返回 true（含超大条目错误）。
+func (s *singleflight) fillFromCache(ctx context.Context, storageKey, userKey string, current *call) bool {
+	cached, hit, cacheErr := s.cached(ctx, storageKey)
+	if cacheErr != nil || !hit {
+		return false
+	}
+	if bytes, oversize := decodeOversize(cached); oversize {
+		current.err = oversizeError(userKey, bytes)
+		return true
+	}
+	current.val = cached
+	return true
+}
+
+// acquireOwnership 处理「无租约表 / 抢租约」两条路径；返回 true 表示 lead 已结束。
+func (s *singleflight) acquireOwnership(
+	ctx context.Context, storageKey, userKey string, current *call,
+	fn func(context.Context) ([]byte, error), commit func(context.Context, []byte) error, finish func(),
+) bool {
+	if s.leases == nil {
+		s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
+		return true
+	}
+	acquired, acquireErr := s.leases.acquireLease(
+		ctx, storageKey, s.owner, s.clk.Now().Unix()+s.leaseSeconds(storageKey))
+	if acquireErr != nil {
+		s.logLeaseWarning("lease_acquire", acquireErr)
+		s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
+		return true
+	}
+	if acquired {
+		s.runAcquired(ctx, storageKey, userKey, current, fn, commit, finish)
+		return true
+	}
+	return false
+}
+
+// tryPreempt 处理租约过期抢占；返回 true 表示 lead 已结束。
+func (s *singleflight) tryPreempt(
+	ctx context.Context, storageKey, userKey string, current *call, lease leaseRow,
+	fn func(context.Context) ([]byte, error), commit func(context.Context, []byte) error, finish func(),
+) bool {
+	now := s.clk.Now().Unix()
+	if lease.ExpiresAt >= now {
+		return false
+	}
+	preempted, preemptErr := s.leases.preemptLease(
+		ctx, storageKey, s.owner, now+s.leaseSeconds(storageKey), now)
+	if preemptErr != nil {
+		s.logLeaseWarning("lease_preempt", preemptErr)
+		s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
+		return true
+	}
+	if preempted {
+		s.runAcquired(ctx, storageKey, userKey, current, fn, commit, finish)
+		return true
+	}
+	return false
 }
 
 // runAcquired 在拿到租约后先重读缓存，堵住「读缓存 miss 与抢租约之间旧 owner 已完成 commit」的窗口。

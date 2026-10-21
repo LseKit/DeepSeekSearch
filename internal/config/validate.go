@@ -277,49 +277,35 @@ func (c *Config) validateCircuit() []error {
 }
 
 func (c *Config) validateLimits() []error {
+	rules := []struct {
+		name   string
+		ok     bool
+		expect string
+		got    int
+	}{
+		{"limits.max_total_chars", inRange(c.Limits.MaxTotalChars, 1000, 500000), "1000~500000", c.Limits.MaxTotalChars},
+		{"limits.default_count", inRange(c.Limits.DefaultCount, 1, 50), "1~50", c.Limits.DefaultCount},
+		{"limits.summary_chars", c.Limits.SummaryChars >= 0, "≥0", c.Limits.SummaryChars},
+		{"limits.min_content_chars", c.Limits.MinContentChars >= 1, "≥1", c.Limits.MinContentChars},
+		{"limits.inline_max_chars", c.Limits.InlineMaxChars >= 0, "≥0", c.Limits.InlineMaxChars},
+		{"limits.fixed_chunk_chars", c.Limits.FixedChunkChars >= 0, "≥0", c.Limits.FixedChunkChars},
+		{"limits.outline_max_sections", inRange(c.Limits.OutlineMaxSections, 20, 2000), "20~2000", c.Limits.OutlineMaxSections},
+		{"limits.budget.max_calls_per_window", c.Limits.Budget.MaxCallsPerWindow >= 0, "≥0", c.Limits.Budget.MaxCallsPerWindow},
+		{"limits.budget.window_s", c.Limits.Budget.WindowS >= 0, "≥0", c.Limits.Budget.WindowS},
+		{"limits.budget.max_calls_per_day", c.Limits.Budget.MaxCallsPerDay >= 0, "≥0", c.Limits.Budget.MaxCallsPerDay},
+	}
 	var errs []error
-	if c.Limits.MaxTotalChars < 1000 || c.Limits.MaxTotalChars > 500000 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.max_total_chars 必须 1000~500000，实际 %d", c.Limits.MaxTotalChars))
-	}
-	if c.Limits.DefaultCount < 1 || c.Limits.DefaultCount > 50 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.default_count 必须 1~50，实际 %d", c.Limits.DefaultCount))
-	}
-	if c.Limits.SummaryChars < 0 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.summary_chars 必须 ≥0，实际 %d", c.Limits.SummaryChars))
-	}
-	if c.Limits.MinContentChars < 1 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.min_content_chars 必须 ≥1，实际 %d", c.Limits.MinContentChars))
-	}
-	if c.Limits.InlineMaxChars < 0 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.inline_max_chars 必须 ≥0，实际 %d", c.Limits.InlineMaxChars))
-	}
-	if c.Limits.FixedChunkChars < 0 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.fixed_chunk_chars 必须 ≥0，实际 %d", c.Limits.FixedChunkChars))
-	}
-	if c.Limits.OutlineMaxSections < 20 || c.Limits.OutlineMaxSections > 2000 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.outline_max_sections 必须 20~2000，实际 %d", c.Limits.OutlineMaxSections))
-	}
-	if c.Limits.Budget.MaxCallsPerWindow < 0 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.budget.max_calls_per_window 必须 ≥0，实际 %d", c.Limits.Budget.MaxCallsPerWindow))
-	}
-	if c.Limits.Budget.WindowS < 0 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.budget.window_s 必须 ≥0，实际 %d", c.Limits.Budget.WindowS))
-	}
-	if c.Limits.Budget.MaxCallsPerDay < 0 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"limits.budget.max_calls_per_day 必须 ≥0，实际 %d", c.Limits.Budget.MaxCallsPerDay))
+	for _, rule := range rules {
+		if !rule.ok {
+			errs = append(errs, configErr(domain.CodeLocConfigInvalid,
+				"%s 必须 %s，实际 %d", rule.name, rule.expect, rule.got))
+		}
 	}
 	return errs
 }
+
+// inRange 判断闭区间；抽出来避免每条区间校验各写一个 &&。
+func inRange(v, lo, hi int) bool { return v >= lo && v <= hi }
 
 func (c *Config) validateCache() []error {
 	var errs []error

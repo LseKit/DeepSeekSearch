@@ -60,28 +60,37 @@ func walkTomlValues(prefix string, value any, visit func(string, any)) {
 	switch v := value.(type) {
 	case map[string]any:
 		for key, child := range v {
-			path := key
-			if prefix != "" {
-				path = prefix + "." + key
-			}
-			walkTomlValues(path, child, visit)
+			walkTomlValues(joinKeyPath(prefix, key), child, visit)
 		}
 	case []map[string]any:
-		for _, child := range v {
-			walkTomlValues(prefix, child, visit)
-		}
+		walkSlice(prefix, len(v), func(i int) any { return v[i] }, visit)
 	case []any:
-		for _, child := range v {
-			walkTomlValues(prefix, child, visit)
-		}
+		walkSlice(prefix, len(v), func(i int) any { return v[i] }, visit)
 	case []string:
 		for _, child := range v {
 			visit(prefix, child)
 		}
 	default:
-		if prefix != "" {
-			visit(prefix, value)
-		}
+		visitLeaf(prefix, value, visit)
+	}
+}
+
+func joinKeyPath(prefix, key string) string {
+	if prefix == "" {
+		return key
+	}
+	return prefix + "." + key
+}
+
+func walkSlice(prefix string, n int, at func(int) any, visit func(string, any)) {
+	for i := 0; i < n; i++ {
+		walkTomlValues(prefix, at(i), visit)
+	}
+}
+
+func visitLeaf(prefix string, value any, visit func(string, any)) {
+	if prefix != "" {
+		visit(prefix, value)
 	}
 }
 
