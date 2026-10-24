@@ -67,8 +67,8 @@
 | 11.2 | 🔴 为什么 11 是 P0：不包的话裸 `net.Error` 会穿到 `ToPayload` 落进兜底码，被标成**不可重试** —— 于是 `14-错误契约` §六 承诺的「网络错误 ✅ 可重试」永不生效，一次 DNS 抖动就直接失败给用户。见 ADR-016 |
 | 12 | `attempt` 序号由 Resilience 通过 `ctx` 传入：`domain.AttemptFromContext(ctx)`（缺省 1），配套 `domain.ContextWithAttempt(ctx, n)`。本包 MUST NOT 自己维护计数器 —— 那是有状态的，违反 §4 禁止事项 1 |
 | 12.1 | 🔴 **这对函数 MUST 放 `domain`，不能放 `resilience`**：`10-包依赖矩阵` §2.4 明确禁止 `deepseek` import `resilience`（否则 deepseek↔resilience 互相依赖，Resilience 包裹 Client 就成环）。`domain` 是二者共同的叶子依赖，是唯一合法落点 |
-| 13 | 🔴 **本包 MUST NOT 持有 Logger**（`10-包依赖矩阵` 禁止 `deepseek → logging`），也 MUST NOT 为「记录原始报文」新增全局回调：全局回调拿不到单次调用的 `call_id`，记出来的行无法与 `call.begin`/`call.end` 对齐。原 `log.max_body_log_kb` 因此**整键移除**，跨层方案（ctx 感知的报文回调 + Tools 关联 `call_id`）登记为 `16-技术债登记表` **DEBT-009**，阶段二实现 |
-| 13.1 | 该开关重新引入前，调用方 MUST NOT 把请求体/响应体原文写进任何日志；`ds_fetch` 的目标 URL 只能以 `domain.RedactURL` 脱敏后的形式出现在 `call.upstream` 等既有字段里（Task-09 §3 第 8.2 条） |
+| 13 | **本包 MUST NOT 持有 Logger**（`10-包依赖矩阵` 禁止 `deepseek → logging`）。报文日志通过 ctx 感知的 `ExchangeHook` / `WithExchangeHook` 实现，由 Tools 层关联 `call_id`；`DEBT-009` 已于 2026-10-21 关闭 |
+| 13.1 | `log.max_body_log_kb` 控制报文日志开关与截断（默认 `0` = 关）；开启后 `req_body`/`resp_body` 进 `call.upstream.done`，`ds_fetch` 的 URL MUST 先经 `domain.RedactURL` |
 
 ### 4 禁止事项
 

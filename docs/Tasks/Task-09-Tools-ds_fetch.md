@@ -42,7 +42,7 @@
 
 ### 2 要创建的文件
 
-`internal/tools/fetch.go`（含 schema）、`internal/tools/fetch_validate.go`（含 SSRF 逻辑，不单独建 ssrf.go）、`internal/tools/fetch_validate_test.go`
+`internal/tools/fetch_validate.go`（调用 toolvalidate）、`internal/tools/fetch_handler.go`、`internal/tools/fetch_render.go`、`internal/toolvalidate/ssrf.go`、`internal/toolschema/schema.go`、`internal/tools/fetch_validate_test.go`
 
 ### 3 实现要求
 
@@ -59,14 +59,14 @@
 | 7 | 三项 annotations 同 `ds_search` |
 | 8 | description 必须说明三种模式（inline/outline/section）与 `cache_id` 的过期语义 |
 
-#### 3.2 SSRF 校验（写在 `fetch_validate.go` 内）
+#### 3.2 SSRF 校验（写在 `internal/toolvalidate/ssrf.go` 内）
 
 | # | 要求 |
 |:-:|---|---|
 | 1 | 拒绝非 http/https scheme |
 | 2 | 拒绝含 `user:pass@` 的 URL |
 | 3 | 拒绝 URL > 8192 字符 |
-| 4 | 拒绝 host 命中黑名单（🔴 **10 个网段 + 3 个域名后缀**，与 §5 骨架的 `blockedNets` 逐项相同、与 `Contract/13-配置契约.md` §3.10 的「10 段」一致；原文写「9 个」是漏数）：`0.0.0.0/8` `10.0.0.0/8` `127.0.0.0/8` `100.64.0.0/10`（CGNAT）`169.254.0.0/16` `172.16.0.0/12` `192.168.0.0/16` `::1/128` `fc00::/7` `fe80::/10` |
+| 4 | 拒绝 host 命中黑名单（🔴 **12 个网段 + 3 个域名后缀**，与 `toolvalidate/ssrf.go` 的 `blockedNets` 逐项相同）：`0.0.0.0/8` `10.0.0.0/8` `127.0.0.0/8` `100.64.0.0/10`（CGNAT）`169.254.0.0/16` `172.16.0.0/12` `192.0.0.0/24` `192.168.0.0/16` `198.18.0.0/15` `::1/128` `fc00::/7` `fe80::/10` |
 | 4.1 | 🔴 **MUST 先 `Unmap()` 再判 `Contains`**：`netip.MustParseAddr("::ffff:127.0.0.1").Is4In6()` 为真，而它对 `127.0.0.0/8` 的 `Contains` **返回 false** ⇒ IPv4-mapped IPv6 直接绕过整张黑名单。URL 里也可写成 `http://[::ffff:7f00:1]/` |
 | 5 | 🔴 拒绝 IP 混淆写法，**MUST 有明确算法**（不能只靠 `netip.ParseAddr`，它对这些写法直接解析失败 ⇒ 被当成普通域名放过）：逐 label 按 8/10/16 进制解析，若整体 ≤ `0xFFFFFFFF` 则转成 `netip.Addr` 再过黑名单。测试 MUST 覆盖 ≥6 种变体（见 §6） |
 | 6 | 拒绝 `*.internal` `*.local` `*.localhost`，以及 host 就是 `localhost` |
@@ -113,7 +113,9 @@ var blockedNets = []netip.Prefix{
     netip.MustParsePrefix("100.64.0.0/10"),  // CGNAT（RFC 6598），云厂商内网常用
     netip.MustParsePrefix("169.254.0.0/16"), // 链路本地 + 云元数据 169.254.169.254
     netip.MustParsePrefix("172.16.0.0/12"),
+    netip.MustParsePrefix("192.0.0.0/24"),   // IANA 保留
     netip.MustParsePrefix("192.168.0.0/16"),
+    netip.MustParsePrefix("198.18.0.0/15"),  // 基准测试保留
     netip.MustParsePrefix("::1/128"),
     netip.MustParsePrefix("fc00::/7"),       // IPv6 ULA
     netip.MustParsePrefix("fe80::/10"),      // IPv6 链路本地
@@ -184,7 +186,7 @@ $ go test ./internal/tools/ -v -run 'TestSSRF|TestFetchValidate|TestSnapshotID'
 ### 8 完成定义（DoD）
 
 - [ ] 🔴 23 个用例全绿（原写 13，与 §6 表的 23 行不符；数字 MUST 等于 §6 表的数据行数）
-- [ ] 黑名单覆盖 🔴 **10** 个网段（原写 8，与 §5 骨架 `blockedNets` 的 10 项、`13-配置契约` §3.10 的「10 段」均不符）+ 3 个域名后缀 + **6 种** IP 混淆写法 + 2 种 IPv4-mapped IPv6 + **1 个公网 IP 反例**（无反例则「全拦」也能过）
+- [ ] 黑名单覆盖 🔴 **12** 个网段（与 `toolvalidate/ssrf.go` 的 `blockedNets` 12 项一致）+ 3 个域名后缀 + **6 种** IP 混淆写法 + 2 种 IPv4-mapped IPv6 + **1 个公网 IP 反例**（无反例则「全拦」也能过）
 - [ ] 提交：`feat(tools): ds_fetch schema 与 SSRF 防护`
 
 ---

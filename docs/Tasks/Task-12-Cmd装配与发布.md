@@ -142,7 +142,7 @@ $ go test ./cmd/... -v
 
 L3b 是**唯一会真实计费**的层。所以：
 
-- 全部文件首行 `//go:build integration`
+- 全部文件的文件头之后、`package` 之前写 `//go:build integration`
 - `make test`（默认）**不会**跑到
 - 必须有真实 `DEEPSEEK_API_KEY`
 - 总调用数必须控制（≤ 10 次，约 ¥0.05）
@@ -151,7 +151,7 @@ L3b 验证的是「真实世界能不能用」：上游的字段名、错误码�
 
 > 🔴 **本原子任务原名「集成测试 L3」，已随 `Engineering/21-测试规范.md` §一 的分层裁决整体改名为 L3b**，用例编号 `L3-1`~`L3-6` 同步改为 `L3b-1`~`L3b-6`。
 > 改名不是文字洁癖：原来的「L3 = 真实上游 + 真 Key」与「协议测试 P1~P26 属 L3（`httptest`）」自相矛盾 —— `httptest` 是**本地假上游**，不需要 Key、不计费。归属不清只有两种结局，都是事故：协议测试被打上 `integration` tag ⇒ 日常 `make test` **静默不跑**，P 断言形同失效且无人发现；或不打 tag 却连真实上游 ⇒ 每次 `go test` 都花真钱（违反铁律 T1）。
-> ⇒ **L3a**（协议/端到端，`httptest` 假上游，**不打 tag**，随 `make test` 跑）归 `Task-11`；**L3b**（真实上游，**首行 MUST 打** `//go:build integration`）才是本任务。判据见 21 号铁律 **T7**。
+> ⇒ **L3a**（协议/端到端，`httptest` 假上游，**不打 tag**，随 `make test` 跑）归 `Task-11`；**L3b**（真实上游，**文件头之后、package 之前 MUST 打** `//go:build integration`）才是本任务。判据见 21 号铁律 **T7**。
 
 ### 2 要创建的文件
 
@@ -254,13 +254,13 @@ ok      github.com/LseKit/DeepSeekSearch/internal/integration
 
 ### 1 上下文（自包含）
 
-发版是机械流程，所以写成 `Scripts/Release.sh`，按 `Contract/17-版本与发布契约` §七 的 16 项逐条执行。任何一项不通过就 `exit 1`。
+发版是机械流程，所以写成 `Scripts/Release.sh`，按 `Contract/17-版本与发布契约` §七 的 21 项逐条执行。任何一项不通过就 `exit 1`。
 
-同时要把 `Doc/` 单向同步到 `GitHubSrc/docs/`（**不用软链接** —— 项目铁律）。
+`docs/` 是仓库内唯一文档根，直接维护；不再有外部 `Doc/` 同步步骤。
 
 ### 2 要创建的文件
 
-`GitHubSrc/Scripts/Release.sh`、`GitHubSrc/Makefile`（追加 `release` / `dist` 目标）、`Doc/Handover/91-验收总表.md` 的勾选更新
+`GitHubSrc/Scripts/Release.sh`、`GitHubSrc/Makefile`（追加 `release` / `dist` 目标）、`docs/Handover/91-验收总表.md` 的勾选更新
 
 ### 3 实现要求
 
@@ -270,10 +270,10 @@ ok      github.com/LseKit/DeepSeekSearch/internal/integration
 | 2 | 产物命名 `DeepSeekSearch_v0.1.0_<os>_<arch>[.exe]` |
 | 3 | 生成 `Bin/SHA256SUMS`（`sha256sum` 全部产物） |
 | 4 | `Release.sh` 顺序执行 **21** 项检查（项数 MUST 由脚本自己数 17 号 §七 的表行数得出，MUST NOT 硬编码），任一项失败立即退出并打印项号 |
-| 5 | 第 9/10/11 项必须**实测**版本三处一致 |
-| 6 | 第 13 项 `SyncDocs.sh --check` 无 diff |
+| 5 | 第 12/13/14 项必须**实测**版本三处一致 |
+| 6 | 第 9 项 `make drift` 的 8 项检查全绿 |
 | 7 | 打**附注** tag：`git tag -a v0.1.0 -m "..."` |
-| 8 | `git push origin main --follow-tags` |
+| 8 | 只推 tag：`git push origin v0.1.0` |
 | 9 | 打 tag 前 MUST 二次确认 `git status` 干净 |
 
 ### 4 禁止事项
@@ -291,7 +291,7 @@ ok      github.com/LseKit/DeepSeekSearch/internal/integration
 ```bash
 #!/usr/bin/env bash
 # 文件名: Release.sh
-# 用途: 按 17-版本与发布契约 §七 的 16 项检查顺序发版，任一项失败立即退出。
+# 用途: 按 17-版本与发布契约 §七 的 21 项检查顺序发版，任一项失败立即退出。
 set -euo pipefail
 
 step() { printf '\n[%02d/16] %s\n' "$1" "$2"; }

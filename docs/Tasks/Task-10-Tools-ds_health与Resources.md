@@ -34,7 +34,7 @@
 
 ### 2 要创建的文件
 
-`internal/tools/health.go`、`internal/tools/health_test.go`
+`internal/health/health.go`、`internal/health/health_test.go`
 
 ### 3 实现要求
 
@@ -44,7 +44,7 @@
 | 2 | 检查项 8 条，每条返回 `{name, ok, detail}` |
 | 3 | 任何一条失败 → 整体 `status="degraded"`，但**工具本身不返回 `IsError`**（除非全部失败） |
 | 4 | 检查项：`api_key_present`、`cache_writable`、`cache_stats`、`clock_tz`、`limiter_state`、`circuit_state`、`effective_config`、`upstream_reachable` |
-| 5 | 🔴 **工具元数据（Task-11 的前置依赖，MUST 在本任务补齐）**：`Name` = `"ds_health"`；`Title` = `"DeepSeek 健康诊断"`（中文人类可读名，客户端 UI 直接显示，口径同 `Contract/15-协议契约.md` §七之二）；`description` MUST 说清三点 —— ①只做本地诊断，默认零网络、**零计费**；②遇到「搜不到结果 / 调用全部失败」时先调本工具自诊断，不要盲目重试；③`status` 的语义（`ok` / `degraded`）与逐条 `{name, ok, detail}` 怎么读。`Annotations` 三项 `ReadOnlyHint=true`、`IdempotentHint=true`、`OpenWorldHint=true`。🔴 **go-sdk v1.8.0 的类型不同**：`ReadOnlyHint` / `IdempotentHint` 是 **`bool`**，`OpenWorldHint` 是 **`*bool`**（只有它需要 `boolPtr`）；原文「三个指针都 MUST 非 nil」是错的，按 bool 写「非 nil」根本编译不过。Task-11 的 `TestToolAnnotations` 会断言**三个工具**的 `ReadOnlyHint==true`、`IdempotentHint==true`、`OpenWorldHint != nil && *OpenWorldHint==true`，本任务不补，按「一个原子任务一个窗口」执行到 Task-11 时必然返工。`OpenWorldHint=true` 的理由：`probe_upstream=true` 时确实访问外部网络；annotation 是静态元数据，MUST NOT 随入参变化 |
+| 5 | 🔴 **工具元数据（Task-11 的前置依赖，MUST 在本任务补齐）**：`Name` = `"ds_health"`；`Title` = `"DeepSeek 健康诊断"`（中文人类可读名，客户端 UI 直接显示，口径同 `Contract/15-协议契约.md` §七之二）；`description` MUST 说清三点 —— ①只做本地诊断，默认零网络、**零计费**；②遇到「搜不到结果 / 调用全部失败」时先调本工具自诊断，不要盲目重试；③`status` 的语义（`ok` / `degraded`）与逐条 `{name, ok, detail}` 怎么读。`Annotations` 三项 `ReadOnlyHint=true`、`IdempotentHint=true`、`OpenWorldHint=true`。🔴 **go-sdk v1.8.0 的类型不同**：`ReadOnlyHint` / `IdempotentHint` 是 **`bool`**，`OpenWorldHint` 是 **`*bool`**（只有它需要 `boolPtr`）；原文「三个指针都 MUST 非 nil」是错的，按 bool 写「非 nil」根本编译不过。Task-11 的 `TestToolAnnotations` 会断言**五个工具**的 `ReadOnlyHint==true`、`IdempotentHint==true`、`OpenWorldHint != nil && *OpenWorldHint==true`，本任务不补，按「一个原子任务一个窗口」执行到 Task-11 时必然返工。`OpenWorldHint=true` 的理由：`probe_upstream=true` 时确实访问外部网络；annotation 是静态元数据，MUST NOT 随入参变化 |
 | 6 | `upstream_reachable` 只在 `probe_upstream=true` 时真做（用 `Client.Ping`，**不计费**，见 §1 计费口径），否则返回 `ok=true, detail="未探测"`。判定标准照 ADR-015 的诊断表逐字实现：**405** → `ok=true`（链路健康、路由正确）；**401** → `ok=false`，detail 指向 Key 失效（`2401`/`3040`）；**404** → `ok=false`，detail 明确提示检查 `[upstream].base_url`（base_url 或路径配错，23 号 §二）；其它 4xx/5xx → `ok=false`，带上游状态码；**网络错误/超时 → `ok=false`，带 `2998 UP_NETWORK`**（🔴 MUST NOT 用 `2999`：2999 的唯一成因是「上游 200 但响应体不合契约」，「上游不可达」是 2998，见 `Contract/14-错误契约.md` §1.2/§1.3、ADR-016） |
 | 7 | `clock_tz` / `limiter_state` / `circuit_state` / `cache_stats` 四项的判定标准 MUST 按 §3.1 逐字实现（无判据则 `degraded` 语义不稳，模型无法靠它自诊断） |
 | 8 | `effective_config` 用 `Config.Redacted()`，Key/Token 显示 `***` |
@@ -63,7 +63,7 @@
 | `circuit_state` | 熔断器处于 Closed 或 HalfOpen | 状态、连续失败数/`[circuit].fail_threshold`、Open 时剩余 `retry_after_ms`（来自 `[circuit].open_ms`） | 🔴 **Open 判 `ok=false`**：Open 期间所有搜索/抓取调用直接失败 `3030 LOC_CIRCUIT_OPEN`，正是 ds_health 要诊断的「为什么搜不到」的头号本地成因。HalfOpen 判 `ok=true`：它在放行探测流量、属于恢复中状态（`[circuit].half_open_probes` ≥1，见 `Task-06` §A-03），报 degraded 反而制造噪音。🔴 另需注意：连续失败计数**只统计 `14-错误契约` §6.1 白名单里的码**，所以「用户参数错了很多次」不会让熔断器跳闸 —— detail 里的失败数因此可能远小于日志里的错误总数，这是设计而非丢数据 |
 | `cache_stats` | ① `[cache].enabled=false` → `ok=true`（合法配置，不是故障）；② enabled 且缓存 DB 可打开、可查询条目数、且未处于降级直连 | entries/`[cache].max_entries`、bytes_mb/`[cache].max_bytes_mb`、`ttl_search_s`/`ttl_fetch_s`、是否降级 | 判 `ok=false` 的只有「已触发 `3060 LOC_CACHE_DEGRADED` 降级直连」或「DB 探测失败」—— 这两种意味着缓存层实际不可用。**容量打满不算故障**：`[cache].prune_interval_s` 的后台清理是设计内行为，写进 detail 供参考即可，否则大缓存机器会永久 degraded |
 
-> 裁决边界：以上判据只决定 `ok` 与 `degraded`，**不改变**第 3 条「单项失败 ≠ 工具 `IsError`」的既有规则；也 MUST NOT 为任何一项新造错误码（码表已冻结 **41** 条）。
+> 裁决边界：以上判据只决定 `ok` 与 `degraded`，**不改变**第 3 条「单项失败 ≠ 工具 `IsError`」的既有规则；也 MUST NOT 为任何一项新造错误码（码表已冻结 **42** 条）。
 
 ### 4 禁止事项
 
@@ -104,7 +104,7 @@ func handleHealth(ctx context.Context, deps Deps, in healthInput) *mcp.CallToolR
 | `effective_config` 内容 | 不含真实 Key 字符 |
 | `probe_upstream=true` | 调用 `fakeClient.Ping`，`pingCalls==1` |
 | `probe_upstream=false` | `pingCalls==0` |
-| 🔴 `Annotations` 三项 + `Title` | 三个 hint 指针非 nil 且 true；`Title="DeepSeek 健康诊断"`（与 Task-11 `TestToolAnnotations` 同口径） |
+| 🔴 `Annotations` 三项 + `Title` | `ReadOnlyHint`/`IdempotentHint` 为 bool true，`OpenWorldHint` 为非 nil 且 true；`Title="DeepSeek 健康诊断"`（与 Task-11 `TestToolAnnotations` 同口径） |
 | 🔴 Ping 返回 404 | `upstream_reachable.ok=false`，detail 含 `base_url`（ADR-015 诊断表） |
 | 🔴 Ping 网络错误 | `ok=false`，detail 含 `2998`，MUST NOT 含 `2999` |
 | 🔴 熔断置 Open（人为构造） | `circuit_state.ok=false` + 整体 `degraded`，工具不 `IsError` |
@@ -158,7 +158,7 @@ $ go test ./internal/tools/ -v -run TestHealth
 | # | 要求 |
 |:-:|---|---|
 | 1 | 三个 Resource 用 `mcp.Resource` + handler 注册到 `srv` |
-| 2 | `MimeType = "application/json"`（**三个都是**。裁决见 `14-错误契约` §5.0 第 2 条：`error-codes` 此前在 14 号写的是 `text/markdown`，但 markdown 就得把 14 号正文嵌进二进制 = 第二份手写真源，且无法断言「条目数 == 41」） |
+| 2 | `MimeType = "application/json"`（**三个都是**。裁决见 `14-错误契约` §5.0 第 2 条：`error-codes` 此前在 14 号写的是 `text/markdown`，但 markdown 就得把 14 号正文嵌进二进制 = 第二份手写真源，且无法断言「条目数 == 42」） |
 | 3 | `Name` 与 `Title` 都是中文，`Description` 说清「什么时候该读它」 |
 | 4 | 🔴 **`ttlMs` / `cacheScope` MUST 按 URI 逐个设，MUST NOT 三个都用同一组值**：`error-codes` 与 `effective-config` 用 `300000`（两者在单进程生命周期内都恒定 —— 配置启动时加载一次不 reload、码表编译进二进制），`usage` 用 **`1000`**。<br>**为什么 `usage` 不用 `0`**：`15-协议契约` §6.2 实测「`SetCacheable` 回调没接上时 `ttlMs` 就是 0」⇒ 0 同时表示「我故意不缓存」与「回调忘了接」，后者正是那个「客户端缓存毫无收益」的静默故障。用 `1000` 表示不缓存，0 就重新变成**只可能是 bug** 的信号（`14-错误契约` §5.0 第 3 条）。<br>**为什么不能全局一个值**：`SetCacheable` 是**服务器级**的单个回调，MUST 按 URI 分派；若对所有请求都返回 300000，`usage` 会被客户端缓存 5 分钟、统计数字直接失去意义 |
 | 4.1 | 🔴 `effective-config` 与 `usage` 的 `cacheScope` MUST 是 `"private"`（含脱敏配置、`config_sha256`、调用量，不得进共享缓存）；只有 `error-codes` 是 `"public"`（无敏感内容，多客户端可共用）。原文写的 `"global"` 不是 `15-协议契约` §6.2 里的取值 |
@@ -212,11 +212,11 @@ func CacheableForRequest(req mcp.Request) (ttlMs int64, scope string)
 
 // usageTracker 记录本进程的调用统计。
 // 🔴 并发口径（二者 MUST 同时成立，此前注释与结构体自相矛盾）：
-//   ① stats map 在 newUsageTracker() 时按 3 个固定工具名一次建好，此后**只读**
+//   ① stats map 在 newUsageTracker() 时按 5 个固定工具名一次建好，此后**只读**
 //      （永不新增/删除键 ⇒ 读 map 无需加锁）；
 //   ② 计数器全部用 atomic —— 热路径上每 ms 都可能有调用，MUST NOT 争锁。
 type usageTracker struct {
-    stats map[string]*toolStat // 构造后只读：键 = {ds_search, ds_fetch, ds_health}
+    stats map[string]*toolStat // 构造后只读：键 = {ds_search, ds_fetch, ds_health, ds_research, ds_extract}
 }
 
 // toolStat 的计数全是原子操作，last_call_at 用 atomic.Value 存 time.Time。
@@ -230,7 +230,7 @@ type toolStat struct {
 
 | 用例 | 期望 |
 |---|---|
-| 读 `ds://error-codes` | 合法 JSON，条目数 == `len(domain.CodeRegistry)` == 41 |
+| 读 `ds://error-codes` | 合法 JSON，条目数 == `len(domain.CodeRegistry)` == 42 |
 | 内容里无手写痕迹 | 改 `CodeRegistry` 一项 → 输出跟着变（测试里临时改再改回） |
 | 读 `ds://effective-config` | 无真实 Key 字符；含 `"source"` 字段 |
 | 读 `ds://usage` | 初始全 0；调用一次 `ds_search` 后 `calls==1` |
@@ -250,12 +250,12 @@ $ go test ./internal/tools/ -v -run TestResources
     --- PASS: TestResources/effective_config_已脱敏
 ```
 
-> 🔴 **本任务不提供端到端 curl 验收命令。** 此前这里有一条 `curl -X POST localhost:8765/mcp -H 'Mcp-Method: resources/read' ...`：它缺 JSON-RPC body、缺 `Mcp-Name` 头、缺 body 内 `_meta["io.modelcontextprotocol/protocolVersion"]`，照抄必得 400（`Mcp-Method` 缺失/不匹配 → `-32020`，缺 `_meta.protocolVersion` → `-32602`，见 `Contract/15-协议契约.md` §四），**无法当验收证据**，已删除。HTTP 端到端验收统一归 Task-12 A-02 的 L3（唯一真实起服务的层，其 P17/P18 覆盖 stdio 与 HTTP 两条路）。「`ds://error-codes` 条目数 == 41」的断言由本任务单测直接读 Resource handler 的输出计数保证，不依赖网络层。
+> 🔴 **本任务不提供端到端 curl 验收命令。** 此前这里有一条 `curl -X POST localhost:8765/mcp -H 'Mcp-Method: resources/read' ...`：它缺 JSON-RPC body、缺 `Mcp-Name` 头、缺 body 内 `_meta["io.modelcontextprotocol/protocolVersion"]`，照抄必得 400（`Mcp-Method` 缺失/不匹配 → `-32020`，缺 `_meta.protocolVersion` → `-32602`，见 `Contract/15-协议契约.md` §四），**无法当验收证据**，已删除。HTTP 端到端验收统一归 Task-12 A-02 的 L3（唯一真实起服务的层，其 P17/P18 覆盖 stdio 与 HTTP 两条路）。「`ds://error-codes` 条目数 == 42」的断言由本任务单测直接读 Resource handler 的输出计数保证，不依赖网络层。
 
 ### 8 完成定义（DoD）
 
 - [ ] 🔴 10 个用例全绿（原写 6，§6 表已扩到 10 行；数字 MUST 等于 §6 表的数据行数）
-- [ ] `ds://error-codes` 条目数 41
+- [ ] `ds://error-codes` 条目数 42
 - [ ] 🔴 三个 Resource 的 `ttlMs` 全 > 0，且 `cacheScope` 只取 `public`/`private` —— 与 `Contract/14-错误契约.md` §五 逐字一致
 - [ ] 🔴 `SetCacheable` 是按 URI 分派的，不是一个全局常量（§6 那条「三者互不相同」的用例必须真实存在并通过）
 - [ ] 提交：`feat(tools): ds_health、Resources 与用量统计`

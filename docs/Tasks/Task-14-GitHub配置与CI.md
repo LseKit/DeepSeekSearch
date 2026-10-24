@@ -3,7 +3,7 @@
 > **执行方式**：2 个原子任务，**每次开新窗口只做一个**。
 > **创建日期**：2026-10-20
 > **前置**：Task-13 已完成（根目录发布文件到位 —— 那 11 个是 `ls` 的输出，不是「A 级文件数」；A 级 12 个里另有 5 个由 Task-01 交付，见 `Contract/18-仓库文件契约.md` §二）。
-> **另需**：Task-11 A-03 已完成（`Scripts/CheckSize.sh`、`Scripts/CheckDocDrift.sh`、`Scripts/SyncDocs.sh` 三个脚本存在）—— 否则 `size` / `drift` job 无从跑起。
+> **另需**：Task-11 A-03 已完成（`Scripts/CheckSize.sh`、`Scripts/CheckDocDrift.sh` 存在）—— 否则 `size` / `drift` job 无从跑起。
 
 ## 任务总览
 
@@ -50,8 +50,9 @@ CI 的第一原则是**便宜的先跑**。格式问题 3 秒能发现，测试�
 | `.github/workflows/release.yml` | §5.8 |
 | `.github/workflows/codeql.yml` | §5.9 |
 | `.github/workflows/scorecard.yml` | §5.10 |
+| `.github/CODEOWNERS` | §5.11 |
 
-> 10 个文件。上表「文件数 8」是笔误，以本表为准：**10 个**。
+> 11 个文件。上表旧写的「文件数 8」是笔误，以本表为准：**11 个**。
 
 ### 3 实现要求
 
@@ -62,7 +63,7 @@ CI 的第一原则是**便宜的先跑**。格式问题 3 秒能发现，测试�
 | 1 | 4 个 workflow **全部**显式写 `permissions:` | 命令 1 |
 | 2 | `ci.yml` 有 **6 个核心 job**：`fmt` `lint` `size` `test` `cover` `drift`（另有 `cross-build` / `vuln` / `win-smoke` 三个不参与顺序链，见要求 15） | 命令 2 |
 | 3 | `ci.yml` 有 `concurrency` 且 `cancel-in-progress: true` | 命令 3 |
-| 4 | `drift` job 调 `CheckDocDrift.sh docs .`（**用 `docs` 不是 `Doc`**，CI 里没 `Doc/`） | 命令 4 |
+| 4 | `drift` job 调 `CheckDocDrift.sh docs .`（`docs/` 是仓库内唯一文档根） | 命令 4 |
 | 5 | `release.yml` 只在 tag `v*` 触发 | 命令 5 |
 | 6 | `release.yml` 产出 SBOM（**一份**，不是每平台一份） | 命令 6 |
 | 7 | `codeql.yml` 语言是 `go` | 命令 7 |
@@ -77,7 +78,7 @@ CI 的第一原则是**便宜的先跑**。格式问题 3 秒能发现，测试�
 | 16 | 🔴 `ci.yml` 的 `on:` 里有 `workflow_call`，`release.yml` 的发布 job 有 `needs: [verify-tag, ci]` | 命令 17、18 |
 | 17 | 🔴 `release.yml` 有 `verify-tag` job，用 `git rev-parse --verify` 校验 tag 存在**且是附注 tag** | 命令 18、19 |
 | 18 | 🔴 `cover` job 的逐包门槛含 `internal/tools:70`（`Task-08`/`Task-09` 的承诺） | 命令 20 |
-| 19 | 🔴 `drift` job 除 `CheckDocDrift.sh` 外还跑 `CheckRepoFiles.sh` 与 `SyncDocs.sh --check` | 命令 21 |
+| 19 | 🔴 `drift` job 除 `CheckDocDrift.sh` 外还跑 `CheckRepoFiles.sh` | 命令 21 |
 | 20 | 🔴 `size` job 用**两参**签名 `CheckSize.sh . docs`（漏第二个参数会加载不到豁免台账，job 恒红） | 命令 22 |
 
 ### 3.1 验收命令（🔴 MUST 从这里复制，不要从 §3 的表格复制）
@@ -152,7 +153,6 @@ grep -c 'internal/tools:70' .github/workflows/ci.yml            # → 1
 
 # 21 🔴 drift job 跑三个脚本
 grep -c 'CheckRepoFiles.sh' .github/workflows/ci.yml            # → 1
-grep -c 'SyncDocs.sh --check' .github/workflows/ci.yml          # → 1
 
 # 22 🔴 size job 两参签名
 grep -c 'CheckSize.sh \. docs' .github/workflows/ci.yml         # → 1
@@ -630,15 +630,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@PIN_DIGEST_v4
-      # CI 里只有 docs/（同步产物），没有 Doc/。所以把 docs 当文档根，代码根为 .
+      # docs/ 是仓库内唯一文档根，代码根为 .
       # 🔴 两参签名：CheckDocDrift.sh <文档根> <代码根>（Engineering/22-架构守护规则 §五）
       - run: bash Scripts/CheckDocDrift.sh docs .
-      # 🔴 C13 新增：这两个脚本都是秒级，此前只在发版那一刻跑 ⇒
-      #    AGENTS.md 漂移、docs/ 忘同步、A/B 级文件被误删，全都要等到打 tag 才暴露。
+      # 🔴 C13 新增：这个脚本是秒级，此前只在发版那一刻跑 ⇒
+      #    AGENTS.md 漂移、A/B 级文件被误删，全都要等到打 tag 才暴露。
       - run: bash Scripts/CheckRepoFiles.sh .
-      # CI 语境没有 Doc/，脚本会明确打印 [SKIP] 并退化为「docs/ 存在且非空」（真检查，
-      # 能抓住「忘了提交 docs/」）；真正的比对由 Release.sh 第 18 项在发版机执行。
-      - run: bash Scripts/SyncDocs.sh --check ../Doc .
 
   cross-build:
     name: 跨平台编译矩阵
@@ -1048,7 +1045,7 @@ $ grep -c 'internal/tools:70' .github/workflows/ci.yml
 ### 8 完成定义（DoD）
 
 - [ ] §7 的 **14 条**命令达到期望输出（贴真实输出），且 §3.1 的 23 条全跑一遍
-- [ ] 10 个文件全部存在
+- [ ] 11 个文件全部存在
 - [ ] 🔴 `grep -rn '@latest' .github/workflows/` 与 `grep -rn 'PIN_DIGEST' .github/workflows/` **都是 0**（前者证明工具已 pin 版本，后者证明占位符已全部换成真实 digest）
 - [ ] 推送后在 GitHub 的 Actions 页看到 4 个 workflow
 - [ ] 提一个 PR 时能看到 CI **9 个** job：6 个核心（`fmt` `lint` `size` `test` `cover` `drift`）+ `cross-build`（4 个矩阵腿）+ `vuln` + `win-smoke`
@@ -1096,7 +1093,7 @@ $ grep -c 'internal/tools:70' .github/workflows/ci.yml
 | 9 | `make check` 依次跑 🔴 **7** 项（`build` `test-race` `lint` `cover-check` `size` `drift` `repo-files`），任一失败即停。⚠️ MUST 是 `cover-check` 而不是 `cover` —— 后者只打印总覆盖率，逐包门槛形同虚设 | `make check` 非 0 时打印 FAILED；且故意让某个包覆盖率不达标时 `make check` **必须**非 0 |
 | 10 | 🔴 `Release.sh` 的**第 1 项**就是 `CheckRepoFiles.sh`（17 号 §七 已把它编为第 1 项，共 **21 项**）。本任务 MUST NOT 再插入「第 0 项」—— 那会让编号与 17 号的表错位 | `grep -n 'CheckRepoFiles' Scripts/Release.sh`；`grep -c '^step ' Scripts/Release.sh` = 21 |
 | 11 | 🔴 **署名检查段**（18 号 §8.1 第 ③ 段 / 闸门 G4）：遍历 `*.go` 与 `*.sh`，排除 `./docs/` 与 `*_test.go`，断言有 `作者: 小逸` 行、前 10 行无 AI 署名、`作者:` 字段不是 AI 名字 | 把一个生产文件的作者行改成 `Hermes` ⇒ 输出一条 FAIL 且退出 1 |
-| 12 | 🔴 **发版工具脚本段**（18 号 §8.2）：`Scripts/SyncDocs.sh`、`Scripts/Release.sh`、`Scripts/CheckRepoFiles.sh` 三者存在且有可执行位。它们**不计入** `A_TOTAL`/`B_TOTAL` | 删掉 `Scripts/SyncDocs.sh` ⇒ 输出一条 FAIL 且退出 1 |
+| 12 | 🔴 **发版工具脚本段**（18 号 §8.2）：`Scripts/Release.sh`、`Scripts/CheckRepoFiles.sh` 两者存在且有可执行位。它们**不计入** `A_TOTAL`/`B_TOTAL` | 删掉 `Scripts/Release.sh` ⇒ 输出一条 FAIL 且退出 1 |
 
 ### 3.1 验收命令
 
@@ -1104,8 +1101,8 @@ $ grep -c 'internal/tools:70' .github/workflows/ci.yml
 cd GitHubSrc
 
 # A/B 级计数是动态的：与 18 号的表格行数比，不与硬编码数字比
-grep -c '^| A[0-9]' ../Doc/Contract/18-仓库文件契约.md      # → A_TOTAL（当前 12）
-grep -c '^| B[0-9]' ../Doc/Contract/18-仓库文件契约.md      # → B_TOTAL（当前 17）
+grep -c '^| A[0-9]' docs/Contract/18-仓库文件契约.md      # → A_TOTAL（当前 12）
+grep -c '^| B[0-9]' docs/Contract/18-仓库文件契约.md      # → B_TOTAL（当前 17）
 
 # 🔴 ERE 交替 MUST 用真竖线。表格单元格里的 \| 是 Markdown 转义，
 #    照抄进单引号就变成「字面竖线」，判据恒为 0 ⇒ 真提交了 Bin/ 也是绿的（假绿）。
@@ -1117,12 +1114,12 @@ printf '#!/usr/bin/env bash\n# 作者: Hermes\n' > Scripts/_tmp_signtest.sh
 bash Scripts/CheckRepoFiles.sh . | grep -c FAIL                 # → ≥1（两条：缺作者行 + 作者是 AI 名字）
 rm -f Scripts/_tmp_signtest.sh
 
-# 工具脚本段：删掉 SyncDocs.sh 就必须红
-mv Scripts/SyncDocs.sh /tmp/ && bash Scripts/CheckRepoFiles.sh . | grep -c FAIL   # → ≥1
-mv /tmp/SyncDocs.sh Scripts/
+# 工具脚本段：删掉 Release.sh 就必须红
+mv Scripts/Release.sh /tmp/ && bash Scripts/CheckRepoFiles.sh . | grep -c FAIL   # → ≥1
+mv /tmp/Release.sh Scripts/
 ```
 
-> ⚠️ **署名段会抓到一个既有问题**：`Engineering/22-架构守护规则.md` §3.1 给的 `CheckSize.sh` 骨架**只有 `# 文件名:` / `# 用途:` / `# 用法:` 三行注释，没有 `# 创建日期:` / `# 作者: 小逸` / `# 项目:`** ⇒ 逐字照抄它，本脚本的署名段就会对 `Scripts/CheckSize.sh` 报 FAIL。落地时 MUST 按 `Contract/19-AGENTS.md全文.md` H11 的五字段补齐文件头（`SyncDocs.sh`、`CheckRepoFiles.sh`、`CheckDocDrift.sh` 的骨架都是五字段齐全的，只有 22 号那份不是）。**22 号不归本任务改，已写进交付报告。**
+> ⚠️ **署名段**：`Scripts/` 下所有 `.sh` MUST 按 `Contract/19-AGENTS.md全文.md` H11 补齐五字段文件头；`CheckRepoFiles.sh` 的署名段会逐文件检查。
 
 ### 4 禁止事项
 
@@ -1249,11 +1246,9 @@ done < <(find . -name '*.go' -o -name '*.sh' | grep -v '^./docs/')
 
 echo ""
 echo "--- 发版工具脚本（不计入 A/B 级，见 Contract/18-仓库文件契约.md §8.2）---"
-# 🔴 SyncDocs.sh 此前**无任何 Task 交付**，却被 17 号 §七 第 18 项、19 号 X11、
-#    91 号 12-A03-4、90 号手册引用 ⇒ 发版闸门指向一个不存在的脚本。
-#    现由 Task-11 A-03 交付，这里 MUST 检查它存在且可执行；MUST NOT 静默放过。
+# 发版工具脚本 MUST 存在且可执行；缺失即 FAIL，MUST NOT 静默放过。
 TOOL_MISS=0
-for s in Scripts/SyncDocs.sh Scripts/Release.sh Scripts/CheckRepoFiles.sh \
+for s in Scripts/Release.sh Scripts/CheckRepoFiles.sh \
          Scripts/CheckSize.sh Scripts/CheckDocDrift.sh; do
     if [ ! -f "$s" ]; then
         bad "发版工具脚本缺失: $s"
@@ -1270,7 +1265,7 @@ echo "--- 交叉一致性 ---"
 
 # AGENTS.md 与 19 号文档的标记内内容必须字节相同
 AGENTS_SRC=""
-for cand in "docs/Contract/19-AGENTS.md全文.md" "../Doc/Contract/19-AGENTS.md全文.md"; do
+for cand in "docs/Contract/19-AGENTS.md全文.md"; do
     [ -f "$cand" ] && { AGENTS_SRC="$cand"; break; }
 done
 if [ -z "$AGENTS_SRC" ]; then
@@ -1299,7 +1294,7 @@ fi
 if [ -f Makefile ]; then
     V="$(grep -E '^VERSION[[:space:]]*:=' Makefile | awk '{print $3}')"
     SRC17=""
-    for cand in "docs/Contract/17-版本与发布契约.md" "Doc/Contract/17-版本与发布契约.md"; do
+    for cand in "docs/Contract/17-版本与发布契约.md"; do
         [ -f "$cand" ] && { SRC17="$cand"; break; }
     done
     if [ -z "$V" ]; then
@@ -1356,7 +1351,7 @@ exit "$FAIL"
 size:
 	GOCYCLO="go tool gocyclo" bash Scripts/CheckSize.sh . ../Doc
 
-# 文档漂移 8 项检查（本地开发时 Doc/ 与代码都在，直接把 Doc 当文档根）
+# 文档漂移 8 项检查（docs/ 是仓库内唯一文档根）
 # 🔴 两参签名 <文档根> <代码根>，与 size 的参数顺序**相反**，别抄串了
 drift:
 	bash Scripts/CheckDocDrift.sh ../Doc .
@@ -1394,7 +1389,7 @@ grep -n 'CheckRepoFiles' Scripts/Release.sh            # → 命中，且在 ste
 
 # 项数与 17 号 §七 的表格行数一致（动态判据，MUST NOT 手抄 21）
 grep -c '^step ' Scripts/Release.sh
-grep -c '^| [0-9]' ../Doc/Contract/17-版本与发布契约.md
+grep -c '^| [0-9]' docs/Contract/17-版本与发布契约.md
 
 # 分母写的是 /21 而不是 /16 或 /17
 grep -n '%02d/' Scripts/Release.sh
@@ -1461,17 +1456,17 @@ $ bash Scripts/CheckRepoFiles.sh . | grep FAIL
   [FAIL] 作者字段被写成了 AI 名字: ./Scripts/_tmp_signtest.sh
 $ rm -f Scripts/_tmp_signtest.sh
 
-# 7. 🔴 故意删掉一个发版工具脚本（SyncDocs.sh 由 Task-11 A-03 交付）
-$ mv Scripts/SyncDocs.sh /tmp/ && bash Scripts/CheckRepoFiles.sh . | grep FAIL; echo "exit=$?"
-  [FAIL] 发版工具脚本缺失: Scripts/SyncDocs.sh
+# 7. 🔴 故意删掉一个发版工具脚本（Release.sh）
+$ mv Scripts/Release.sh /tmp/ && bash Scripts/CheckRepoFiles.sh . | grep FAIL; echo "exit=$?"
+  [FAIL] 发版工具脚本缺失: Scripts/Release.sh
 exit=1
-$ mv /tmp/SyncDocs.sh Scripts/
+$ mv /tmp/Release.sh Scripts/
 
 # 8. 🔴 规模脚本的两参签名（漏第二个参数会加载不到豁免台账）
 $ bash Scripts/CheckSize.sh .            # 只传一个参数
-⚠️  豁免台账不存在: Doc/Engineering/豁免台账.md（本次不放行任何豁免）
-F-S1 违规: internal/domain/errors.go 有 720 行 (上限 600)
-$ bash Scripts/CheckSize.sh . ../Doc     # 正确
+⚠️  豁免台账不存在: docs/Engineering/豁免台账.md（本次不放行任何豁免）
+F-S5 违规: internal/domain 15 个文件 (上限 10)
+$ bash Scripts/CheckSize.sh . docs       # 正确
 已加载规模豁免 1 条
 ✅ 规模红线全部通过（F-S1/F-S3/F-S5；F-S2/F-S4 见 TestSizeLimits）
 ```

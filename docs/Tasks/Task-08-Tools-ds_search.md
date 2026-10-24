@@ -38,7 +38,7 @@
 
 ### 2 要创建的文件
 
-`internal/tools/registry.go`、`internal/tools/stubs.go`（`fetchTool`/`healthTool` 最小 stub，见 §3.1 第 1 条）、`internal/tools/search.go`（含 schema + annotations + description）、`internal/tools/search_validate.go`、`internal/tools/registry_test.go`、`internal/tools/search_validate_test.go`
+`internal/tools/registry.go`、`internal/tools/search_validate.go`、`internal/tools/search_handler.go`、`internal/tools/search_render.go`、`internal/toolschema/schema.go`、`internal/tools/registry_test.go`、`internal/tools/search_validate_test.go`
 
 ### 3 实现要求
 
@@ -46,16 +46,16 @@
 
 | # | 要求 |
 |:-:|---|---|
-| 1 | `Registry() []Tool` 返回 `[]Tool{&fetchTool{}, &healthTool{}, &searchTool{}}` —— 🔴 **字面量顺序本身就是 Name 字典序**（`ds_fetch` `ds_health` `ds_search`），MUST NOT 先按依赖顺序摆放再指望 sort，也 MUST NOT 用 map 收集（顺序不定） |
-| 1.1 | 🔴 `fetchTool` / `healthTool` 的真实实现分别归 Task-09 / Task-10，而本任务的 `registry_test.go` 断言**三工具全绿** ⇒ 本任务 MUST 在 `internal/tools/stubs.go` 里先建**最小 stub**：只实现 `Name()` 与 `Register()`（注册一个占位 handler，被调用时返回 `IsError=true` + `code=3099 LOC_INTERNAL`，hint 写明「该工具尚未实装」）。Task-09 / Task-10 落地各自工具时 MUST 在同一窗口内删除 `stubs.go` 里对应的 stub，不留双定义 |
+| 1 | `Registry() []Tool` 当前返回 5 个工具（`ds_extract` `ds_fetch` `ds_health` `ds_research` `ds_search`）—— 🔴 **顺序就是 Name 字典序**，MUST NOT 用 map 收集（顺序不定） |
+| 1.1 | 本任务最初用 `stubs.go` 占位，后续 Task-09/10 与组合工具任务已用真实实现替换；`stubs.go` 已删除，MUST NOT 重新引入 |
 | 2 | `RegisterAll(srv, deps) error` 遍历注册工具 + 注册 3 个 Resource |
 | 3 | `Tool` 接口实现 `Name()` 与 `Register(srv, deps)` |
 
-#### 3.2 `search.go`（schema 部分）
+#### 3.2 `toolschema/schema.go`（schema 部分）
 
 | # | 要求 |
 |:-:|---|---|
-| 1 | 参数与 `Contract/12-数据契约.md` §4.1 表**逐字一致**，共 **18 个**（下表照抄，字段名 MUST NOT 改写） |
+| 1 | 参数与 `Contract/12-数据契约.md` §4.1 表**逐字一致**，共 **19 个**（下表照抄，字段名 MUST NOT 改写） |
 | 2 | `Title` = `"DeepSeek 网页搜索"` |
 | 3 | `Annotations`：`ReadOnlyHint=true`、`IdempotentHint=true`（go-sdk v1.8.0 为 bool 字段）、`OpenWorldHint` 为非 nil 指针且 true |
 | 4 | 工具级 description 含且仅含 **4 条**行为规则（见 §5 骨架）；`after` / `min_rerank` 的两个陷阱写进**参数级** description（见 §3.2.1 字面量） |
@@ -97,7 +97,7 @@
 上表是**人读视图**；schema 的机器真源是下面这份 JSON 字面量。执行窗口 MUST 原样照抄（go-sdk v1.8.0 无 `mcp.Schema`；用 `json.RawMessage` 原样赋给 `mcp.Tool.InputSchema`，保证字节不变），MUST NOT 按表格「自行发挥」—— 表格记法（如「`detail | enum`」）不含 description 文案与 nullable 约定，自行生成最容易在这里走样。用常量字面量也天然满足「同一入参两次调用 schema 字节相同」。
 
 ```go
-// searchInputSchemaJSON 是 ds_search 的 InputSchema 字面量（18 个属性，顺序即 §3.2 参数表顺序）。
+// searchInputSchemaJSON 是 ds_search 的 InputSchema 字面量（19 个属性，顺序即 §3.2 参数表顺序）。
 const searchInputSchemaJSON = `{
   "type": "object",
   "additionalProperties": false,
@@ -380,7 +380,7 @@ func handleSearch(ctx context.Context, deps Deps, in searchInput) *mcp.CallToolR
 | 上游 429 | `IsError=true` + `code=2429` + `retryable=true` |
 | 🔴 上游单次尝试超时（fake 返回网络错误） | 按 `[retry]` 重试后仍失败：`IsError=true` + `code=2998` + `retryable=true` + `details.cause="attempt_timeout"`（14 号 §2.2；MUST NOT 落 2999） |
 | 🔴 整链超 `timeout.search.total_timeout_ms` | `code=3020` + `details.elapsed_ms`，不再发起新尝试 |
-| 🔴 调用方取消 ctx（限流等待中 cancel） | 立即返回 `IsError=true`，`fakeClient.searchCalls==0`；错误码按 `3020` 处置（裁决：码表已冻结 41 条、无「调用方取消」专码，3020 的语义「本次调用时间预算已终结、重试无用」最贴近；MUST NOT 让它按 14 号 §1.3 兜底落进 `3099` —— 取消不是我方 bug，其 hint 会误导用户去报 issue） |
+| 🔴 调用方取消 ctx（限流等待中 cancel） | 立即返回 `IsError=true`，`fakeClient.searchCalls==0`；错误码按 `3020` 处置（裁决：码表已冻结 42 条、无「调用方取消」专码，3020 的语义「本次调用时间预算已终结、重试无用」最贴近；MUST NOT 让它按 14 号 §1.3 兜底落进 `3099` —— 取消不是我方 bug，其 hint 会误导用户去报 issue） |
 | 🔴 熔断 Open | `code=3030` + `details.retry_after_ms` + `retryable=true`，`fakeClient.searchCalls==0` |
 | 上游空结果 | `IsError=false` + `total=0` + 1 warning |
 | `total` ≠ `len(results)`（截断发生） | 顶层两字段不相等且 description 第 4 条规则的存在被断言 |

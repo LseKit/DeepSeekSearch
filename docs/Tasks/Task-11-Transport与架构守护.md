@@ -9,7 +9,7 @@
 |---|---|
 | 目标 | stdio + 无状态 Streamable HTTP 两个传输，配完整中间件链；架构守护测试落地 |
 | 依赖 | Task-02 ~ Task-10 |
-| 产出 | 协议契约 **P1~P26 全 26 条**全绿；`arch_test.go` 能拦住违规 import（**项目内 + 外部两组**）；F-S2/F-S4 有自动化牙齿；`SyncDocs.sh` 交付 |
+| 产出 | 协议契约 **P1~P26 全 26 条**全绿；`arch_test.go` 能拦住违规 import（**项目内 + 外部两组**）；F-S2/F-S4 有自动化牙齿 |
 | 必读 | `Contract/15-协议契约` 全文（尤其 §六 中间件铁律、**§六之二 中间件链顺序**、§十 验收清单）；`Engineering/22-架构守护规则` 全文（尤其 §2.1 两张白名单表、§2.3、§三 分工表、§五 调用签名）；`Contract/11-接口契约` §六；`Contract/10-包依赖矩阵` §2.1~2.9 |
 
 | 原子 | 标题 | 关键风险 |
@@ -148,7 +148,7 @@ $ go test ./internal/transport/ -v -run 'TestBuild|TestAvailable|TestStdio'
 🔴 **中间件顺序固定（C10 裁决后）**：
 
 ```
-recover → accessLog → securityHeaders → healthz → admission → crossOrigin → hostGuard → authGuard → bodyLimit → mcp
+recover → accessLog → securityHeaders → healthz → pathGuard → admission → crossOrigin → hostGuard → authGuard → bodyLimit → mcp
 ```
 
 > **原顺序是 `… healthz → hostGuard → authGuard → crossOrigin → bodyLimit → mcp`，并标注「MUST NOT 调换」。它是错的，而且错在「auth_enabled=true 时任何浏览器端 MCP 客户端都不可用」这个量级上。**
@@ -205,7 +205,7 @@ recover → accessLog → securityHeaders → healthz → admission → crossOri
 | 4 | MUST NOT 在 `healthz` 里发起任何上游请求 |
 | 5 | MUST NOT 用 `==` 比较 token（必须 `subtle.ConstantTimeCompare`） |
 | 6 | MUST NOT 在 401/403 响应里回显期望的 token 或 Host |
-| 7 | MUST NOT 省略 `allow_non_local_host=true` 时强制 `auth_enabled=true` 的交叉校验（Task-03 已做，这里再断言） |
+| 7 | MUST NOT 强制 `allow_non_local_host=true` 时 `auth_enabled=true`：二者独立，`auth_enabled=false` 只打 3092 warning（ADR-018） |
 | 8 | 🔴 MUST NOT 把 `authGuard` 或 `hostGuard` 装在 `crossOrigin` **之外**（后果见 §1 的三条：浏览器 preflight 必 401、401/403 响应浏览器读不到、跨源可探测 token） |
 | 9 | 🔴 MUST NOT 在 `authGuard` 里为 `OPTIONS` 开「直接放行」的例外 —— 裁决见 §1；例外分支会让鉴权层出现一条无人定义语义的路径，而 CORS 头仍然发不出去 |
 | 10 | MUST NOT 把 `healthz` 装到 `crossOrigin` / `hostGuard` / `authGuard` 之内（探活必须能被 systemd、nginx、监控**匿名且带公网 Host** 调用，见 `15-协议契约` §七之三） |
@@ -352,8 +352,9 @@ $ echo "共 26 个断言（P1~P26 全覆盖），全部 PASS"
 | `GitHubSrc/internal/arch_test.go` | 新建 | AR-1/AR-2/AR-3/AR-4(F-S2/F-S4)/AR-5/AR-6 全部守护测试（**一个文件**，理由见 §3 第 1 条） |
 | `GitHubSrc/Scripts/CheckSize.sh` | 新建 | F-S1/F-S3/F-S5（逐字用 `Engineering/22-架构守护规则` §3.1） |
 | `GitHubSrc/Scripts/CheckDocDrift.sh` | 新建 | 文档漂移 **8 项**（逐字用 22 号 §五 的口径；`/mcp/DeepSeekSearch/Scripts/CheckDocDrift.sh` 是它的参考实现） |
-| `GitHubSrc/Scripts/SyncDocs.sh` | 新建 | 🔴 `Doc/` → `docs/` 单向同步。**此前无任何 Task 交付它**，裁决归本任务（见 §3 第 12~15 条） |
-| `Doc/Engineering/豁免台账.md` | **已存在，只核对** | F-S6。核对 ` ```exempt ` 块是五段格式（见 §3 第 11 条），MUST NOT 为了过检查往里加行 |
+| `docs/Engineering/豁免台账.md` | **已存在，只核对** | F-S6。核对 ` ```exempt ` 块是五段格式（见 §3 第 11 条），MUST NOT 为了过检查往里加行 |
+
+> 🔴 `docs/` 是仓库内唯一文档根，直接维护；`Scripts/SyncDocs.sh` 与外部 `Doc/` 已移除，不再作为交付物。
 
 > 🔴 **`CheckRepoFiles.sh` 不在本任务**：它由 `Task-14` A-02 交付。22 号 §5.2 说的「与 `CheckSize.sh`、`CheckRepoFiles.sh` 同批」指的是「同一批脚本类交付物」，不是同一个 Task。
 
@@ -375,11 +376,11 @@ $ echo "共 26 个断言（P1~P26 全覆盖），全部 PASS"
 | 12 | 🔴 **F-S2（函数 ≤50 行）与 F-S4（嵌套 ≤3 层）由 `TestFunctionLength` / `TestNestingDepth` 用 `go/ast` 实现**（22 号 §三 的分工表）。交付时两者读 `Scripts/size-baseline.json`；`DEBT-010` 清零后基线读取已移除，直接按原阈值判定 |
 | 13 | F-S2 口径：数函数体 `{` 与 `}` 之间的**非注释非空**行数；整行注释（`//` 开头）与完全落在块注释区间内的行不计；**行尾注释所在行算代码行**（它确实占了一行代码） |
 | 14 | F-S4 口径：`if` / `for` / `range` / `switch` / `type switch` / `select` / `func` 字面量各 +1 层，函数体本身是第 0 层（与 20 号 §三「卫语句提前 return」的意图一致） |
-| 15 | 🔴 `TestSizeLimits` 调 `Scripts/CheckSize.sh`，参数 MUST 是 `("..", "../../Doc")` —— `go test` 的工作目录是**包目录** `GitHubSrc/internal/`，所以代码根是 `..`、文档根是 `../../Doc`（部署根的 `Doc/`）。写成 `"../Doc"` 会解析成 `GitHubSrc/Doc`（不存在）⇒ 豁免台账加载不到、domain 的 F-S5 直接 FAIL。CI 语境没有 `Doc/` 时，脚本回退到 `<代码根>/docs/Engineering/豁免台账.md` |
+| 15 | 🔴 `TestSizeLimits` 调 `Scripts/CheckSize.sh`，参数 MUST 是 `("..", "../docs")` —— `go test` 的工作目录是**包目录** `GitHubSrc/internal/`，所以代码根是 `..`、文档根是 `../docs`（仓库内唯一文档根） |
 | 16 | 🔴 `TestSizeLimits` 在 `os.Stat` 找不到脚本时：**CI 环境（`os.Getenv("CI") != ""`）MUST `t.Fatalf`**，只有本地才允许 `t.Skip`。静默 Skip 会让架构测试在脚本缺失时变绿 —— 正是 22 号 §六 明令禁止的捷径 |
 | 17 | F-S2/F-S4/F-S1/F-S5 的作用域都 MUST **排除 `_test.go`**（与 `CheckSize.sh` 的 `! -name '*_test.go'` 同口径）。否则本文件自己的 `detectCycle` 会被 F-S4 判违规，逼实现者去改测试 —— 那就是拆护栏 |
-| 18 | 🔴 **`SyncDocs.sh` 的交付要求**（此前 17 号 §七 第 18 项、`19-AGENTS.md全文` X11、`91-验收总表` 12-A03-4、`90-Qoder执行手册` 都引用它，却无处交付）：签名 `SyncDocs.sh [--check] [<文档根> [<代码根>]]`，默认 `../Doc` 与 `.`；`--check` 无 diff 退出 0、有 diff 退出 **1** 并打印差异清单；同步模式先清空 `<代码根>/docs/` 再整目录复制 |
-| 19 | `SyncDocs.sh` 在**文档根不存在**（CI 语境：仓库里只有 `docs/`，没有 `Doc/`）时 MUST 打印明确的 `[SKIP]` 原因并退化为「验证 `docs/` 存在且非空」—— 这一条能抓住「忘了提交 `docs/`」，是真检查而不是空转。MUST NOT 直接退出 0 什么都不做 |
+| 18 | 🔴 `docs/` 直接维护：`SyncDocs.sh` 与外部 `Doc/` 已移除，Task-11 不再交付同步脚本；文档根固定为 `GitHubSrc/docs` |
+| 19 | 文档根缺失时，`CheckSize.sh` / `CheckDocDrift.sh` / `CheckRepoFiles.sh` 必须 FAIL，MUST NOT 静默跳过 |
 | 20 | `CheckDocDrift.sh` 做 **8 项**比对，逐项与 22 号 §5.1 的表一一对应（`[N/8]` 的 `8` 以脚本 `say` 的分母为准）。调用签名固定两参：`CheckDocDrift.sh <文档根> <代码根>` |
 | 21 | 全部脚本 `set -euo pipefail`（`CheckSize.sh` / `CheckRepoFiles.sh` 例外用 `set -uo pipefail`，因为要收集全部失败 —— 见 22 号 §3.1）+ 可执行位 `0755` |
 | 22 | 🔴 **存量规模基线（ADR-017，已退出）**：交付时曾把 29 处存量写入 `GitHubSrc/Scripts/size-baseline.json` 冻结；`DEBT-010` 于 2026-10-21 清零后基线文件删除、读取逻辑移除，当前所有代码直接按原阈值判定，MUST NOT 重新引入基线 |
@@ -392,13 +393,13 @@ $ echo "共 26 个断言（P1~P26 全覆盖），全部 PASS"
 |:-:|---|---|
 | 1 | 🔴 MUST NOT 用 `t.Skip` 绕过违规（唯一允许的 Skip 见 §3 第 16 条：本地且脚本尚不存在） |
 | 2 | MUST NOT 在脚本里用 `ln -s` 软链接（项目铁律：不用软硬链接） |
-| 3 | MUST NOT 让 `SyncDocs.sh` 反向同步（`docs/` → `Doc/`），也 MUST NOT 让它双向合并 |
+| 3 | MUST NOT 重新引入 `Doc/` 或 `SyncDocs.sh`；`docs/` 是仓库内唯一文档根 |
 | 4 | MUST NOT 在 `CheckSize.sh` 里静默跳过豁免（必须打印豁免数量） |
 | 5 | MUST NOT 把 `arch_test.go` 放进任何业务包（放 `internal/` 根，package `internal_test`） |
 | 6 | 🔴 MUST NOT 只查项目内 import 就宣称「白名单已强制」—— 那样 `deepseek import mcp` 这种最核心的禁令检不出（§3 第 4 条） |
 | 7 | MUST NOT 在本文件里单独增删白名单条目。改白名单 MUST 走 22 号 §六 的流程（ADR → 10 号 → 22 号 → 本文件），三处不一致 `CheckDocDrift.sh` 会红 |
 | 8 | MUST NOT 为了让 F-S2/F-S4 通过而把 `_test.go` 纳入或排除的口径改来改去（口径见 §3 第 17 条） |
-| 9 | 🔴 `arch_test.go` 里的工具名比较用 `strings.Join` 而不是 `cmp.Diff`。**理由不是「go-cmp 是第 5 个依赖」**—— 它是**仅测试**依赖，在 `_test.go` 里用完全合法（`10-包依赖矩阵` §2.10.1：运行时 4 个 + 仅测试 1 个，AR-1 的第 1 步就跳过 `_test.go`，根本管不到它）。真正的理由是：want 只有 3 个短字符串，`cmp.Diff` 的结构化 diff 带不来任何信息，却会让人误以为「守护依赖数的文件自己依赖 go-cmp」。<br>⚠️ **MUST NOT 把这条推广成「全项目禁用 go-cmp」** —— `21-测试规范` §二 与 `19-AGENTS.md全文` T8 都允许在测试里用它做深比较（配置结构体、错误 payload 这类），手写 `reflect.DeepEqual` + 自拼 diff 会丢掉它的全部价值。禁止的是 **testify**，不是 go-cmp |
+| 9 | 🔴 `arch_test.go` 里的工具名比较用 `strings.Join` 而不是 `cmp.Diff`。**理由不是「go-cmp 是第 5 个依赖」**—— 它是**仅测试**依赖，在 `_test.go` 里用完全合法（`10-包依赖矩阵` §2.10.1：运行时 4 个 + 仅测试 1 个，AR-1 的第 1 步就跳过 `_test.go`，根本管不到它）。真正的理由是：want 只有 5 个短字符串，`cmp.Diff` 的结构化 diff 带不来任何信息，却会让人误以为「守护依赖数的文件自己依赖 go-cmp」。<br>⚠️ **MUST NOT 把这条推广成「全项目禁用 go-cmp」** —— `21-测试规范` §二 与 `19-AGENTS.md全文` T8 都允许在测试里用它做深比较（配置结构体、错误 payload 这类），手写 `reflect.DeepEqual` + 自拼 diff 会丢掉它的全部价值。禁止的是 **testify**，不是 go-cmp |
 
 ### 5 参考骨架（🔴 完整可运行实现，MUST 按此落地，语义不得偏离）
 
@@ -810,7 +811,7 @@ func TestNestingDepth(t *testing.T) {
 // TestSizeLimits 把 CheckSize.sh（F-S1/F-S3/F-S5）接进 go test。
 //
 // 🔴 路径口径：go test 的工作目录是**包目录**（GitHubSrc/internal/），
-//   所以脚本在 ../Scripts/、代码根是 ..（即 GitHubSrc 本身）、文档根是 ../../Doc（部署根的 Doc/）。
+//   所以脚本在 ../Scripts/、代码根是 ..（即 GitHubSrc 本身）、文档根是 ../docs。
 // 🔴 MUST NOT 用 t.Skip 兜底：CI 里脚本缺失 = 架构测试静默变绿，
 //   正是 22 号 §六 明令禁止的捷径。
 func TestSizeLimits(t *testing.T) {
@@ -822,7 +823,7 @@ func TestSizeLimits(t *testing.T) {
         t.Skipf("本地未找到 %s（Task-11 之后才存在）；改用 20-编码规范 §3.1 的自查命令", script)
         return
     }
-    out, err := exec.Command("bash", script, "..", "../../Doc").CombinedOutput()
+    out, err := exec.Command("bash", script, "..", "../docs").CombinedOutput()
     if err != nil {
         t.Fatalf("规模红线违规:\n%s", out)
     }
@@ -830,56 +831,9 @@ func TestSizeLimits(t *testing.T) {
 }
 ```
 
-#### 5.2 `Scripts/SyncDocs.sh`（🔴 本任务交付，此前无处落地）
+#### 5.2 文档同步已退出
 
-```bash
-#!/usr/bin/env bash
-# 文件名: SyncDocs.sh
-# 用途: Doc/ → GitHubSrc/docs/ 单向同步。--check 只比对不写。
-#       docs/ 是产物，MUST NOT 手写（19-AGENTS.md全文 X11）。
-# 创建日期: 2026-11-XX
-# 作者: 小逸
-# 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
-# 用法: SyncDocs.sh [--check] [<文档根> [<代码根>]]
-#   开发机（在 GitHubSrc/ 下）: bash Scripts/SyncDocs.sh --check ../Doc .
-#   CI（仓库根，没有 Doc/）  : bash Scripts/SyncDocs.sh --check ../Doc .
-set -euo pipefail
-
-MODE="sync"
-if [ "${1:-}" = "--check" ]; then MODE="check"; shift; fi
-DOC_ROOT="${1:-../Doc}"
-CODE_ROOT="${2:-.}"
-DEST="$CODE_ROOT/docs"
-
-if [ ! -d "$DOC_ROOT" ]; then
-  # 🔴 CI 语境：仓库里只有同步产物 docs/，没有 Doc/。
-  #    MUST NOT 假装比对通过；退化为「docs/ 存在且非空」——
-  #    这一条能抓住「忘了把 docs/ 提交上来」，是真检查。
-  #    真正的同步比对由 Release.sh 第 18 项在发版机执行（17-版本与发布契约 §七）。
-  echo "[SKIP] 文档根 $DOC_ROOT 不存在（CI 语境只有 docs/）"
-  [ -d "$DEST" ] || { echo "[FAIL] $DEST 不存在 —— docs/ 忘了提交"; exit 1; }
-  n=$(find "$DEST" -name '*.md' | wc -l)
-  [ "$n" -gt 0 ] || { echo "[FAIL] $DEST 是空的"; exit 1; }
-  echo "[OK] $DEST 存在且含 $n 份 .md"
-  exit 0
-fi
-
-if [ "$MODE" = "check" ]; then
-  if diff -r -q "$DOC_ROOT" "$DEST" >/dev/null 2>&1; then
-    echo "[OK] docs/ 与 Doc/ 无差异"
-    exit 0
-  fi
-  echo "[FAIL] docs/ 与 Doc/ 有差异（MUST 跑 bash Scripts/SyncDocs.sh 后重新提交）："
-  diff -r -q "$DOC_ROOT" "$DEST" || true
-  exit 1
-fi
-
-# 同步模式：先清空再整目录复制。MUST NOT 用软链接（项目铁律），MUST NOT 反向同步。
-mkdir -p "$DEST"
-find "$DEST" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-cp -R "$DOC_ROOT"/. "$DEST"/
-echo "[OK] 已同步 $(find "$DEST" -name '*.md' | wc -l) 份文档到 $DEST"
-```
+`docs/` 是仓库内唯一文档根，直接维护；`Scripts/SyncDocs.sh` 与外部 `Doc/` 已移除，不再有同步步骤。
 
 ### 6 测试代码（故意违规验证守卫有效）
 
@@ -896,7 +850,6 @@ echo "[OK] 已同步 $(find "$DEST" -name '*.md' | wc -l) 份文档到 $DEST"
 | 临时写一个 4 层嵌套的 `if` | `TestNestingDepth` 红（F-S4 有牙齿） |
 | 临时把 `Scripts/CheckSize.sh` 改名 + `CI=1` | `TestSizeLimits` **Fatalf**（不是 Skip） |
 | 文档加一个错误码但代码没加 | `CheckDocDrift.sh` 退出 1 |
-| 改 `Doc/` 里一个字但不跑同步 | `SyncDocs.sh --check` 退出 1 并打印差异 |
 | 🔴 单包导出符号临时加 1 个（超过 20） | `CheckSize.sh` 的 F-S5 变红（无基线，直接按阈值判定） |
 | 🔴 删除基线中 `pruneByAge` 条目（代码仍 68 行） | `TestFunctionLength` 变红 |
 | 🔴 新增一个复杂度 11 的函数且不进基线 | `CheckSize.sh` 的 F-S3 变红 |
@@ -928,8 +881,6 @@ SIZE_OK
 $ bash Scripts/CheckDocDrift.sh ../Doc . && echo DRIFT_OK
 DRIFT_OK
 
-$ bash Scripts/SyncDocs.sh --check ../Doc . && echo SYNC_OK
-[OK] docs/ 与 Doc/ 无差异
 SYNC_OK
 ```
 
@@ -942,7 +893,7 @@ SYNC_OK
 
 ### 8 完成定义（DoD）
 
-- [ ] 3 个脚本（`CheckSize.sh` / `CheckDocDrift.sh` / `SyncDocs.sh`）全部有可执行位且按 §7 的两参签名退出 0
+- [ ] 本任务交付的 2 个脚本（`CheckSize.sh` / `CheckDocDrift.sh`）有可执行位且按 §7 的两参签名退出 0；`CheckRepoFiles.sh` 归 Task-14
 - [ ] 6 个守护测试（`TestPackageDependencies` / `TestFunctionLength` / `TestNestingDepth` / `TestSizeLimits` / `TestToolNames` / `TestToolAnnotations`）全绿
 - [x] 🔴 基线机制已完成历史使命：交付时 `Scripts/size-baseline.json` 冻结 29 处存量（F-S2/F-S3/F-S5）；`DEBT-010` 于 2026-10-21 清零后基线文件删除、读取逻辑移除
 - [ ] 🔴 三条基线变异测试（§6 末尾）各验证一次并贴输出：基线 +1 变红、删除条目后代码仍超标变红、新增复杂度 11 的函数不进基线变红

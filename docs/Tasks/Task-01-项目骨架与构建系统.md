@@ -27,7 +27,7 @@
 
 ### 0 前置
 
-- 已 `cd` 到项目根（含 `Doc/` 的那一层）
+- 已 `cd` 到项目根（`GitHubSrc/` 的父目录）
 - `go version` ≥ `go1.27`
 
 ### 1 上下文（自包含）
@@ -35,7 +35,7 @@
 本项目是一个 MCP 服务器。目录分两侧：
 
 - **`GitHubSrc/`** —— 唯一推到 GitHub 的部分。里面**全部小写**（Go 包目录强制小写）
-- **部署侧目录** —— 不进 git。**全部 PascalCase**（`Bin/ Config/ Data/ Logs/ Doc/ Scripts/ Ecosystem/`）
+- **部署侧目录** —— 不进 git。**全部 PascalCase**（`Bin/ Config/ Data/ Logs/ Scripts/ Ecosystem/`）
 
 这个大小写差异是**故意的**：Go 的 import path 不允许有大写包目录做惯例，而部署侧是给人看的。MUST NOT 为了「统一」把 `GitHubSrc/internal` 改成 `Internal`。
 
@@ -419,7 +419,7 @@ exit=2
 # ↑ 上面这份输出是**用一份合成 coverage.out 实跑 awk 得到的**，不是手写示意。
 #   合成 profile 里故意放了三项该被排除的文件，用来证明排除真的生效：
 #     internal/tools/handler_test.go   9 条语句 0 命中
-#     internal/domain/codes.go        41 条语句 0 命中
+#     internal/domain/codes.go        42 条语句 0 命中
 #     cmd/deepseeksearch/main.go       6 条语句 0 命中
 #   若排除失效，internal/tools 会从 80% 掉到 42%（8/19）而 FAIL。
 #   ⇒ 落地时 MUST 用同样手法自证一次：往 profile 里塞一个 _test.go，
@@ -454,7 +454,7 @@ total:  (statements) 33.3%   # 真实骨架的数值（cmd 包部分覆盖）；
 
 ### 1 上下文（自包含）
 
-`GitHubSrc/config.example.toml` 是**给用户复制用的**完整配置样例，内容 MUST 与 `Doc/Contract/13-配置契约` 第二节的 toml 代码块**逐字一致**。这样做的原因是：任何「文档一份、代码一份」的配置都会漂移，而我们的防线是 `Scripts/CheckDocDrift.sh` 做 diff。
+`GitHubSrc/config.example.toml` 是**给用户复制用的**完整配置样例，内容 MUST 与 `docs/Contract/13-配置契约` 第二节的 toml 代码块**逐字一致**。这样做的原因是：任何「文档一份、代码一份」的配置都会漂移，而我们的防线是 `Scripts/CheckDocDrift.sh` 做 diff。
 
 README 面向 GitHub 访客；CHANGELOG 记录版本；LICENSE 用 MIT。
 
@@ -462,7 +462,7 @@ README 面向 GitHub 访客；CHANGELOG 记录版本；LICENSE 用 MIT。
 
 | 文件 | 内容来源 |
 |---|---|
-| `GitHubSrc/config.example.toml` | 逐字复制 `Doc/Contract/13-配置契约` §二的 toml 代码块 |
+| `GitHubSrc/config.example.toml` | 逐字复制 `docs/Contract/13-配置契约` §二的 toml 代码块 |
 | `GitHubSrc/README.md` | 按下文骨架写（**只是骨架**，最终发布版由 `Task-13` A-01 覆盖） |
 | `GitHubSrc/CHANGELOG.md` | 按下文骨架写（**只是骨架**，最终发布版由 `Task-13` A-01 覆盖） |
 | `GitHubSrc/docs/.gitkeep` | 空文件（`docs/` 是文档同步目标目录） |
@@ -614,7 +614,7 @@ BUILD_OK
 ### 8 完成定义（DoD）
 
 - [ ] 上述命令达到期望输出
-- [ ] `config.example.toml` 的 toml 键数量与 `Doc/Contract/13-配置契约` §二一致（人工数 3 个 section 头核对）
+- [ ] `config.example.toml` 的 toml 键数量与 `docs/Contract/13-配置契约` §二一致（人工数 3 个 section 头核对）
 - [ ] 提交信息：`docs: 加入配置样例、README 与 CHANGELOG`
 
 ---

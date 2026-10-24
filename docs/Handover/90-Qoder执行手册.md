@@ -1,6 +1,6 @@
 # 90 · Qoder 执行手册
 
-> **文件路径**：`/mcp/DeepSeekSearch/Doc/Handover/90-Qoder执行手册.md`
+> **文件路径**：`/mcp/DeepSeekSearch/GitHubSrc/docs/Handover/90-Qoder执行手册.md`
 > **用途**：开发机上的执行模型**照着做就能把项目做完**。这份是操作手册，不是设计文档。
 > **创建日期**：2026-10-20
 > **适用**：全新 IDE 窗口 + 已 checkout 空仓库 + 一个模型干全部活
@@ -13,7 +13,7 @@
 
 | 阶段 | 判据 | 你该读什么 |
 |---|---|---|
-| **阶段 0 · 文档加固** | ~~`GitHubSrc/` 不存在~~ ✅ **已于 2026-10-20 完成** | 结果：`CheckConsistency` OK 90 / FAIL 0、`CheckDocDrift` 17 项全过、独立交叉核对 0 条问题。剩余项（`92` 号 §七）**全部非阻塞**，不影响编码 |
+| **阶段 0 · 文档加固** | ~~`GitHubSrc/` 不存在~~ ✅ **已于 2026-10-20 完成** | 结果：`CheckConsistency` OK 90 / FAIL 0、`CheckDocDrift` 8 项全过、独立交叉核对 0 条问题。剩余项（`92` 号 §七）**全部非阻塞**，不影响编码 |
 | **阶段 1 · 编码实现** | **`GitHubSrc/` 不存在也没关系 —— 现在就是从这里开始** | 读本手册全文，按 §三 的顺序表逐个原子任务开窗口。**第一个窗口做 Task-01 A-01**（它负责创建 `GitHubSrc/`），做完后 `GitHubSrc/` 才存在 |
 
 **为什么有这个区分**：2026-10-20 的文档审计发现了 7 项「照文档逐字执行必然失败」的 P0 缺陷与 42 项数字矛盾，正在按台账逐项修复。**在台账清零之前进入编码阶段，执行窗口会反复撞上验收红灯**，而最可能的反应是「改检查凑绿」—— 那会摧毁整套护栏。
@@ -21,7 +21,7 @@
 ```bash
 cd /mcp/DeepSeekSearch
 [ -d GitHubSrc ] && echo "阶段 1：读 90 号手册全文" || echo "阶段 0：先读 92-审计修复台账.md"
-bash Scripts/CheckDocDrift.sh Doc . ; echo "drift EXIT=$?"
+(cd GitHubSrc && bash Scripts/CheckDocDrift.sh docs .) ; echo "drift EXIT=$?"
 python3 Scripts/CheckConsistency.py ; echo "consistency EXIT=$?"
 ```
 
@@ -47,10 +47,10 @@ python3 Scripts/CheckConsistency.py ; echo "consistency EXIT=$?"
 │   ├── cmd/deepseeksearch/
 │   ├── internal/{domain,config,deepseek,resilience,tools,logging,transport}/
 │   │   └── <pkg>/testdata/   ← 夹具在包内，仓库根没有 testdata/
-│   ├── docs/                 ← 由 Doc/ 单向同步，MUST NOT 手写
+│   ├── docs/                 ← 唯一文档根（入库，直接维护）
 │   ├── Scripts/
 │   └── go.mod go.sum Makefile .golangci.yml LICENSE README.md CHANGELOG.md
-├── Bin/ Config/ Data/ Logs/ Doc/ Scripts/ Ecosystem/   ← 部署侧，全部 PascalCase
+├── Bin/ Config/ Data/ Logs/ Scripts/ Ecosystem/   ← 部署侧，全部 PascalCase
 ```
 
 🔴 **`GitHubSrc/` 内全部小写**（Go 包目录惯例）；**外层全部 PascalCase**。MUST NOT 为了「统一」改。
@@ -61,12 +61,12 @@ python3 Scripts/CheckConsistency.py ; echo "consistency EXIT=$?"
 |---|---|
 | 仓库根 | **`/mcp/DeepSeekSearch/GitHubSrc/`**（`.git` 就在这一层） |
 | 谁在仓库里 | 只有源码与发布物：`cmd/ internal/`（夹具在包内 `internal/*/testdata/`）、`docs/`、`Scripts/` + 根级 A/B 级文件 |
-| 谁不在仓库里 | `Doc/`、部署根的 `Scripts/`、`Bin/ Config/ Data/ Logs/` |
+| 谁不在仓库里 | 部署根的 `Scripts/`、`Bin/ Config/ Data/ Logs/` |
 | 提交命令 | 所有 `git` 操作 MUST 在 `GitHubSrc/` 内执行 |
 
-**为什么**：`Contract/18-仓库文件契约.md` 的 A/B 级文件路径都是相对**仓库根**写的（`README.md`、`AGENTS.md`、`go.mod`、`Makefile` 等），而 `90` 号与 `Task-13` 都把它们放在 `GitHubSrc/` 下。若在部署根 `git init`，`git add -A` 会把 `Doc/` 一起提交，且 `AGENTS.md` 在仓库里的位置会变成 `GitHubSrc/AGENTS.md`（嵌套一层）—— 与 18 号 A3 的「根」不符，`CheckRepoFiles.sh` 与 `Release.sh` 全部失效。
+**为什么**：`Contract/18-仓库文件契约.md` 的 A/B 级文件路径都是相对**仓库根**写的（`README.md`、`AGENTS.md`、`go.mod`、`Makefile` 等），而 `90` 号与 `Task-13` 都把它们放在 `GitHubSrc/` 下。若在部署根 `git init`，`AGENTS.md` 在仓库里的位置会变成 `GitHubSrc/AGENTS.md`（嵌套一层）—— 与 18 号 A3 的「根」不符，`CheckRepoFiles.sh` 与 `Release.sh` 全部失效。
 
-> ⚠️ 部署根的 `AGENTS.md` 是**给 agent 加载的副本**（窗口开在部署根时才会被读到），它**不在仓库里**；仓库里的那份是 `GitHubSrc/AGENTS.md`。两份都由 `Doc/Contract/19-AGENTS.md全文.md` 生成、逐字节相同，由 `CheckDocDrift.sh` 第 8 项校验。
+> ⚠️ 部署根的 `AGENTS.md` 是**给 agent 加载的副本**（窗口开在部署根时才会被读到），它**不在仓库里**；仓库里的那份是 `GitHubSrc/AGENTS.md`。两份都由 `docs/Contract/19-AGENTS.md全文.md` 生成、逐字节相同，由 `CheckDocDrift.sh` 第 8 项校验。
 >
 > 🔴 MUST NOT 在部署根再 `git init`。若已误建：确认零提交后 `mv .git GitHubSrc/.git` 即可（有提交的话先 `git bundle` 备份）。
 
@@ -125,13 +125,13 @@ git config user.name "..." && git config user.email "..."
 你现在做完这一份 Task 文档里的全部原子任务。
 
 项目根目录：/mcp/DeepSeekSearch
-任务文件：Doc/Tasks/Task-<NN>-<名称>.md
+任务文件：GitHubSrc/docs/Tasks/Task-<NN>-<名称>.md
 本文件的原子任务：A-01 <标题> → A-02 <标题> → …（按文档里的顺序）
 
 硬规则：
 1. 读这份 Task 文档的全部原子任务，以及各原子任务「必读」里点名的文档章节。
-   MUST NOT 读整个 Doc/ 目录，MUST NOT 提前读别的 Task 文档。
-2. MUST NOT 修改 Doc/Contract/ 下的任何文件。契约是冻结的。
+   MUST NOT 读整个 docs/ 目录，MUST NOT 提前读别的 Task 文档。
+2. 改行为 MUST 同步 docs/Contract/ 的说明；单独改契约 MUST 走 ADR。
    发现文档之间对不上 → 停下来报告，MUST NOT 自行裁决后继续。
 3. 按文档顺序逐个做，MUST NOT 跳序、MUST NOT 合并两个原子任务一起实现。
 4. 🔴 每切换到一个新原子任务，MUST 重新读它的八节（0 前置 / 1 上下文 /
@@ -143,7 +143,7 @@ git config user.name "..." && git config user.email "..."
    MUST NOT 说「应该通过了」。
 7. 任何一条验收失败 → 贴失败原文并停下。MUST NOT 用改测试、加 t.Skip、
    放宽断言的方式让它变绿。
-8. 按 Doc/Engineering/20-编码规范：命名、注释只写「为什么」、F-S1~F-S6 规模红线。
+8. 按 docs/Engineering/20-编码规范：命名、注释只写「为什么」、F-S1~F-S6 规模红线。
 9. 所有字段名 / 错误码 / 配置键 MUST 与文档逐字一致，MUST NOT 发明。
 10. 每个源文件带五字段文件头，作者恒为「小逸」（19-AGENTS.md全文 §5.5）。
 
@@ -179,17 +179,17 @@ git config user.name "..." && git config user.email "..."
 
 ```bash
 cd /mcp/DeepSeekSearch/GitHubSrc
-bash ../Scripts/CheckDocDrift.sh ../Doc .
+bash Scripts/CheckDocDrift.sh docs .
 ```
 
-> 为什么要从 `GitHubSrc/` 跑：从部署根跑 `Doc .` 时代码根是 `.`，第 7 项（`codes.go` 常量数 / 配置键 / 工具数）会 **SKIP**，等于没查。
+> 为什么要从 `GitHubSrc/` 跑：代码根是 `.`，第 7 项（`codes.go` 常量数 / 配置键 / 工具数）才会真正比对；从部署根跑会把代码侧 SKIP。
 
-**文档层两个护栏只在窗口改过文档时才跑**（正常执行窗口 MUST NOT 改 `Doc/`，所以通常不用）：
+**文档层护栏在窗口改过 `docs/` 时跑**：
 
 ```bash
 cd /mcp/DeepSeekSearch
-python3 Scripts/CheckConsistency.py
-bash Scripts/CheckDocDrift.sh Doc .        # 文档语境；第 7 项 SKIP 属预期
+python3 Scripts/CheckConsistency.py GitHubSrc/docs
+bash GitHubSrc/Scripts/CheckDocDrift.sh GitHubSrc/docs GitHubSrc
 ```
 
 ---
@@ -247,7 +247,7 @@ MUST NOT 跳序。想并行会撞 import 循环与接口不一致。
 | 2 | **MUST NOT 修改 `Contract/` 下的任何文件** | 契约是冻结的。真需要改 → 停下来问，走 ADR |
 | 3 | **MUST NOT 用「改测试」让测试变绿** | 规模/架构/契约测试是护栏，改它等于拆护栏 |
 | 4 | **MUST NOT 自己发明字段名/错误码/配置键** | 三处文档与代码有 diff 检查，名字不一致直接红 |
-| 5 | **MUST NOT 在 `Doc/` 与 `GitHubSrc/docs/` 两处手写同一内容** | `docs/` 是同步产物，手写会被覆盖 |
+| 5 | **MUST NOT 在仓库外维护第二份文档副本** | `GitHubSrc/docs/` 是唯一文档根，两份副本必然漂移 |
 | 6 | **每个「测试通过」必须贴真实命令输出** | 没有输出的「通过」= 没测 |
 | 7 | **每个源文件 MUST 带文件头，`作者` 恒为 `小逸`** | 法务声明。MUST NOT 出现 AI / 助手 / 生成工具署名。格式见 `AGENTS.md` §5.5 |
 
@@ -263,7 +263,7 @@ MUST NOT 跳序。想并行会撞 import 循环与接口不一致。
 | 4 | 代码块里的 `\n` 变成真换行 | 反转义时删了所有反斜杠 | 只反转义实测全集 **32** 个字符（原 11 字符表漏了 21 种，ADR-013），见 `Contract/12-数据契约.md` §6.2 |
 | 5 | 改配置不生效 | 优先级顺序写反 / `toml` tag 拼错 | `Config.Source(key)` 打印来源 |
 | 6 | 5 个并发请求花了 5 次钱 | 没做 singleflight | Task-07 A-02，这是必需不是优化 |
-| 7 | 反代 / 直连局域网后全部 403 | 两层各查各的：本项目 `hostGuard` 查 **Host 头**（`3093`）；SDK 的 DNS 重绑定防护查「**本连接本地地址是回环** + Host 非回环」 | 反代或 `host="0.0.0.0"`：`allow_non_local_host=true` **且** `auth_enabled=true`；反代到回环监听且转发原始 Host：再加 `disable_localhost_protection=true` |
+| 7 | 反代 / 直连局域网后全部 403 | 两层各查各的：本项目 `hostGuard` 查 **Host 头**（`3093`）；SDK 的 DNS 重绑定防护查「**本连接本地地址是回环** + Host 非回环」 | 反代或 `host="0.0.0.0"`：`allow_non_local_host=true`；是否鉴权由 `auth_enabled` 单独决定（false 会打 3092 警告）；反代到回环监听且转发原始 Host：再加 `disable_localhost_protection=true` |
 | 8 | `golangci-lint` 一次性报几百个 issue | 用 v1 配置格式跑了 v2 | 用 `20-编码规范` §1.1 的 v2 配置 |
 
 ---
@@ -277,13 +277,12 @@ make lint && make test-race
 
 # ② 规模红线
 # 🔴 MUST 两个参数：CheckSize.sh <代码根> <文档根>
-#    只传一个时 DOC_ROOT 退化为默认的 Doc，在 GitHubSrc/ 下不存在 ⇒ 豁免台账加载不到
-#    ⇒ 已登记的 internal/domain/errors.go（720 行）直接判 F-S1 FAIL，CI 恒红。
+#    路径写错 ⇒ 豁免台账加载不到 ⇒ 已登记的 internal/domain/errors.go（720 行）直接判 F-S1 FAIL。
 #    ⚠️ 注意它与 CheckDocDrift.sh 的参数顺序**相反**（那个是 <文档根> <代码根>）。
-bash Scripts/CheckSize.sh . ../Doc
+bash Scripts/CheckSize.sh . docs
 
 # ③ 文档漂移（Task-11 之后才有）
-bash Scripts/CheckDocDrift.sh ../Doc .
+bash Scripts/CheckDocDrift.sh docs .
 
 # ④ 发布文件齐备（Task-13/14 之后才有）
 bash Scripts/CheckRepoFiles.sh .
@@ -303,7 +302,7 @@ cd /mcp/DeepSeekSearch/GitHubSrc
 bash Scripts/Release.sh --dry-run      # 🔴 21 项逐条打印（真源：Contract/17 号 §七 的表行数）
 ```
 
-🔴 21 项里第 9/10/11 项是版本一致性（`--version` / `/healthz` / `serverInfo.version`），这是发版第一号事故源 —— **三处必须同源**。项数 MUST 由脚本自己数 17 号 §七 的表行数得出，MUST NOT 在此处硬编码。
+🔴 21 项里第 12/13/14 项是版本一致性（`--version` / `/healthz` / `serverInfo.version`），这是发版第一号事故源 —— **三处必须同源**。项数 MUST 由脚本自己数 17 号 §七 的表行数得出，MUST NOT 在此处硬编码。
 
 ---
 
@@ -317,8 +316,7 @@ bash Scripts/Release.sh --dry-run      # 🔴 21 项逐条打印（真源：Cont
 | 答案合成 | `ADR-010` |
 | Key 池 | `ADR-008` |
 | 多租户 / BYOK | N7 |
-| `ds_research` / `ds_extract` / `no_cache` / `SKILL.md` | DEBT-001~004，阶段二 |
-| 手写 `docs/` | 由 `SyncDocs.sh` 单向生成 |
+| `SKILL.md` | DEBT-004，已决定不做；`ds_research` / `ds_extract` / `no_cache` 已于 2026-10-21 实现 |
 
 ---
 

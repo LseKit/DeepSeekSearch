@@ -32,7 +32,7 @@
 | 答案合成 | 调用方本身就是 LLM 且有用户完整上下文；合成会销毁引用、隐藏 prompt injection |
 | SSE 传输 | 2026-07-28 规范只定义 `stdio` 与 `Streamable HTTP` |
 | Key 池 / 多租户 | QPS 是账号级，同账号多 Key 无收益 |
-| `ds_research` / `ds_extract` / `no_cache` | 已登记为阶段二技术债 |
+| 阶段二能力 | 见 `docs/Decisions/16-技术债登记表.md`；`ds_research` / `ds_extract` / `no_cache` 已于 2026-10-21 实现 |
 
 ### 1.2 许可
 
@@ -46,7 +46,7 @@
 
 | # | 规则 | 为什么 |
 |:-:|---|---|
-| **H1** | **文档优先**：改行为 MUST 先改 `docs/Contract/`，再改代码 | 契约是唯一真源。代码先行必然漂移，`make drift` 会红 |
+| **H1** | **代码为准**：运行时行为以代码为唯一真源；改行为 MUST 同步 `docs/Contract/` 的说明 | 代码是实际执行的东西，文档无法执行；同步由 `make drift` 校验 |
 | **H2** | **提交粒度 = 一个原子任务一次 commit**，MUST NOT 把多个原子任务揉进一个 commit，MUST NOT 顺手做别的原子任务 | 粒度粗了就无法用 `docs/Handover/91-验收总表.md` 逐条核对，出了问题也不能只回滚那一个任务 |
 | **H3** | **MUST NOT 改测试让它变绿** | 规模/架构/契约测试是护栏。改它等于拆护栏 |
 | **H4** | **MUST NOT 自己发明**字段名、错误码、配置键、工具名 | 三处文档与代码有 diff 检查，名字不一致直接红 |
@@ -110,7 +110,7 @@ go test ./... -count=1                                # 全量（禁缓存）
 ## 4. 代码结构地图
 
 🔴 **git 仓库根就是下面这个 `GitHubSrc/`**（`.git` 在这一层）。所有 `git` 命令 MUST 在 `GitHubSrc/` 内执行；
-`Doc/` 与部署根的 `Scripts/` **不在仓库里**（`Doc/` 由 `SyncDocs.sh` 单向同步到 `docs/`）。
+`docs/` 是仓库内唯一文档根；部署根的 `Scripts/` 不在仓库里。
 
 ```
 GitHubSrc/
@@ -132,8 +132,8 @@ GitHubSrc/
 ├── internal/mcputil/       MCP 入参/结果薄封装（叶子包）
 ├── internal/toolvalidate/  工具层纯校验函数（叶子包）
 ├── internal/arch_test.go   架构守护测试
-├── Scripts/                CheckSize / CheckDocDrift / SyncDocs / Release
-└── docs/                   从 ../Doc 单向同步，MUST NOT 手写
+├── Scripts/                CheckSize / CheckDocDrift / CheckRepoFiles / Release
+└── docs/                   唯一文档根（入库，直接维护）
 ```
 
 > 测试夹具在**包内** `internal/<pkg>/testdata/`，仓库根**没有** `testdata/`：`config` 8 份 `.toml`、`deepseek` 2 组 `.json` + 同名 `.meta`、`tools` 的 `search_input_schema.json`。清单与更新规则见 `docs/Engineering/21-测试规范.md` §五。
@@ -148,7 +148,7 @@ GitHubSrc/
 | 新增 MCP 工具 | 新文件 `internal/tools/xxx.go` + `registry.go` 加 1 行 | `transport` |
 | 新增传输 | 新文件 `internal/transport/xxx.go` + `Build()` 加 case | `tools` `deepseek` |
 | 改上游请求体 | `internal/deepseek/request.go` + `docs/Contract/12-数据契约.md` §一 | 别在 `tools` 里拼 JSON |
-| 改日志事件名 | `internal/domain/events.go` + `docs/Tasks/Task-04` A-02 | 三处文档只引用不重写 |
+| 改日志事件名 | `internal/domain/events.go` + `docs/Tasks/Task-04` A-02 | 代码是定义处，文档只做说明 |
 
 ### 4.2 依赖方向（单向，MUST NOT 反向）
 
@@ -382,7 +382,7 @@ func TestBuildQuery(t *testing.T) {
 | X8 | 把 API Key 拼进任何 `fmt.Errorf` | 会进日志 |
 | X9 | 在 `ds_fetch` 里对正文做 HTML 清洗 | 上游给的已是 Markdown，清洗会毁代码块与表格 |
 | X10 | 按 byte 处理正文长度 | P2 |
-| X11 | 手写 `docs/` 下的任何文件 | 那是 `Scripts/SyncDocs.sh` 的产物 |
+| X11 | 在仓库外维护第二份文档副本 | 两份副本必然漂移；`docs/` 是唯一文档根 |
 | X12 | 提交二进制到 git | `Bin/` 在 `.gitignore` 里；二进制只进 Release 附件 |
 | X13 | 用软链接 / 硬链接 | 项目铁律 |
 | X14 | 在项目目录外写文件 | 项目铁律（只写 `Data/` `Logs/`） |
@@ -391,9 +391,9 @@ func TestBuildQuery(t *testing.T) {
 
 ## 9. 文档契约与单一真源
 
-**同一个事实只写在一个地方**，其它文档只引用。
+**同一个事实只写在一个地方**，其它文档只引用。下表是文档索引；运行时行为以代码为准。
 
-| 事实 | 唯一真源 |
+| 事实 | 文档位置（代码实现为准） |
 |---|---|
 | Go interface 签名 | `docs/Contract/11-接口契约.md` |
 | 错误码 / 消息 / hint | `docs/Contract/14-错误契约.md` §二 |

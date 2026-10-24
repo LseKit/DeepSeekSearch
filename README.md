@@ -3,7 +3,7 @@
 把 [DeepSeek 的 Search / Fetch API](https://api-docs.deepseek.com/zh-cn/guides/search)
 包装成一个 [MCP](https://modelcontextprotocol.io) 服务器。
 
-一个静态二进制，两种传输，三个工具。
+一个静态二进制，两种传输，五个工具。
 
 [![CI](https://github.com/LseKit/DeepSeekSearch/actions/workflows/ci.yml/badge.svg)](https://github.com/LseKit/DeepSeekSearch/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/LseKit/DeepSeekSearch.svg)](https://pkg.go.dev/github.com/LseKit/DeepSeekSearch)
@@ -21,13 +21,15 @@ DeepSeekSearch 做两件事：
 1. **`ds_search`** —— 调 DeepSeek 搜索接口，返回**已按相关性降序**的结果，并按 `detail` 四档分级，让调用方自己决定要多少信息。
 2. **`ds_fetch`** —— 抓网页正文，**大文档按标题分节**返回目录，模型按需取节，不会一次塞进 200k token。
 
-## 三个工具
+## 五个工具
 
 | 工具 | 作用 | 典型耗时 |
 |---|---|---|
 | `ds_search` | 网页搜索。支持 `site:` / `-site:` / `lang:` / `after:` / `before:` / 精确短语 | 1~5s |
 | `ds_fetch` | 正文抓取。超过 8000 字符返回目录，按 `section` 取节 | 0.1~30s |
 | `ds_health` | 本地诊断。检查 Key / 上游连通 / 缓存 / 生效配置。**不计费** | <50ms |
+| `ds_research` | 组合研究：1 次搜索 + 并发抓取前 N 条来源，返回带编号引用的材料 | 数秒 |
+| `ds_extract` | 批量抓取：1~10 个 URL 并发抓取，单条失败只影响该条 | 数秒 |
 
 ## 快速开始
 

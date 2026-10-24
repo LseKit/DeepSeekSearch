@@ -39,7 +39,7 @@
 
 ### 2 要创建的文件
 
-`internal/resilience/cache.go`、`internal/resilience/cache_sqlite.go`、`internal/resilience/cache_test.go`
+`internal/resilience/cache/cache.go`、`internal/resilience/cache/cache_sqlite.go`、`internal/resilience/cache/cache_test.go`
 
 ### 3 实现要求
 
@@ -166,7 +166,7 @@ leaseS = max(60, ceil(2 × timeout.<tool>.total_timeout_ms / 1000))
 
 ### 2 要创建的文件
 
-`internal/resilience/singleflight.go`、`internal/resilience/singleflight_test.go`
+`internal/resilience/cache/singleflight.go`、`internal/resilience/cache/singleflight_test.go`
 
 ### 3 实现要求
 
@@ -175,7 +175,7 @@ leaseS = max(60, ceil(2 × timeout.<tool>.total_timeout_ms / 1000))
 | 1 | `Do(ctx, key, waitMs, fn)` 返回 `(val, shared, err)` |
 | 2 | 进程内：同 key 并发只执行 1 次 `fn`，其它等待并共享结果 |
 | 3 | 跨进程：`INSERT OR IGNORE INTO inflight(k, owner, expires_at)` → 若 `affected == 1` 说明我是 owner，执行 `fn` |
-| 3.1 | 🔴 **`Do` 的签名 MUST 带 `commit` 回调**：`Do(ctx, key, waitMs, fn, commit)`，其中 `commit func(val []byte) error` 由 Tools 层提供、内部就是 `cache.Put`。**owner 的顺序 MUST 是「`fn` 成功 → `commit(val)` 成功 → 才 `DELETE` 租约」**。理由见下方 §3.1 的时序证明 |
+| 3.1 | 🔴 **`Do` 的签名 MUST 带 `commit` 回调**：`Do(ctx, key, waitMs, fn, commit)`，其中 `commit func(context.Context, []byte) error` 由 Tools 层提供、内部就是 `cache.Put`。**owner 的顺序 MUST 是「`fn` 成功 → `commit(val)` 成功 → 才 `DELETE` 租约」**。理由见下方 §3.1 的时序证明 |
 | 4 | 非 owner → 轮询 `cache.Get(key)`，间隔 100ms，直到 ① 拿到值 ② `waitMs` 超时 ③ 读到 oversize 标记（第 9.2 条）④ 租约消失 |
 | 4.1 | 🔴 **分支 ④「租约消失且缓存无值」MUST 有明确定义的行为**（原设计列了这个条件却没说怎么办）：裁决为 **重新尝试一次 `INSERT OR IGNORE` 抢租约**；抢到就成为新 owner 执行 `fn`，抢不到就继续轮询。MUST NOT 直接返回 `3075`（那会让等待者在 owner 只是慢了一点时白白失败），也 MUST NOT 无条件自己打上游（那就没单飞了）。配合第 3.1 条，这个分支在正常情况下**几乎不可达** —— 只在 owner 进程被 kill 时触发 |
 | 5 | 租约 `expires_at = now + leaseS`，`leaseS = max(60, ceil(2 × timeout.<tool>.total_timeout_ms / 1000))`。**默认配置下 fetch 实为 220s**（见 §1，E12） |
@@ -256,7 +256,7 @@ func (s *singleflight) Do(
     key string,
     waitMs int,
     fn func(context.Context) ([]byte, error),
-    commit func([]byte) error, // 可为 nil（cache == nil 时）
+    commit func(context.Context, []byte) error, // 可为 nil（cache == nil 时）
 ) (val []byte, shared bool, err error)
 
 // ownerID 的唯一性是 ReleaseAll 正确性的前提。
@@ -303,7 +303,7 @@ $ go test ./internal/resilience/ -race -v -run TestSingleflight
 
 - [ ] 🔴 17 个用例全绿（原写 18，§6 表实为 17 行；含跨进程那几个），`-race` 干净
 - [ ] 🔴 **时序用例通过**：`commit` 先于 DELETE 租约，且窗口内到达的等待者不会让 `fn` 执行第 2 次（§3.1 竞态修复的证据）
-- [ ] 🔴 `grep -n 'last_error_code' internal/resilience/singleflight.go` 有命中（跨进程错误传播已实现，第 7.1 条）
+- [ ] 🔴 `grep -n 'last_error_code' internal/resilience/cache/singleflight.go` 有命中（跨进程错误传播已实现，第 7.1 条）
 - [ ] 🔴 `inflight` 表结构与 `ADR-006` 一致，且**多出 `last_error_code` 一列** ⇒ 需同步改 `ADR-006` 的建表 SQL（**在报告里提出，不要自己改 ADR**）
 - [ ] `internal/resilience` 整体覆盖率 ≥ **80%**
 - [ ] 提交：`feat(resilience): 跨进程 singleflight`

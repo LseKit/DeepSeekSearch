@@ -65,15 +65,15 @@ issues:
     # 测试文件放宽：允许长函数、允许重复
     - path: _test\.go
       linters: [funlen, gocognit, gocyclo, dupl, errcheck]
-    # 🔴 错误码常量表不查注释。文件名是 codes.go（Task-02 §2 创建的就是它），
+    # 错误码常量表不查注释。文件名是 codes.go，
     #    原写 codes_gen\.go —— 那个文件从不存在，于是这条排除**永远不匹配**，
-    #    revive 会对 41 个 Code* 常量逐个报「缺注释」；而它们的语义真源是
-    #    Contract/14-错误契约.md §二，在常量上再抄一遍注释只会造出第二份会漂移的真源。
+    #    revive 会对 42 个 Code* 常量逐个报「缺注释」；而它们的语义真源是
+    #    错误码表，在常量上再抄一遍注释只会造出第二份会漂移的真源。
     - path: internal/domain/codes\.go
       linters: [revive]
-    # 事件名唯一真源是 Task-04 A-02 §3.1。逐常量写注释会造出第二份会漂移的
+    # 事件名唯一真源是事件表。逐常量写注释会造出第二份会漂移的
     # 真源，并让 `grep -c 'Ev[A-Z]' events.go` 的 24 计数被注释行翻倍。
     - path: internal/logging/events\.go
       linters: [revive]
 
-  # 规模红线（由 Task-11 的自定义检查脚本 + 本 linter 共同守护）
+  # 规模红线（由自定义检查脚本 + 本 linter 共同守护）

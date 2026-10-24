@@ -2,7 +2,7 @@
 # 依据 PR 上的标签分组；`skip-changelog` 标签的 PR 不出现在 release notes 里。
 # 🔴 GitHub 只支持「按 label 分组」，没有「按 commit message 前缀分组」这个能力，
 #    所以 CONTRIBUTING.md 的 commit type 词表与本文件的 label 词表 MUST 有一张
-#    显式映射表 + 明确「谁打 label」—— 见 Contract/18-仓库文件契约.md §4.6。
+#    显式映射表 + 明确「谁打 label」。
 #    没有那张表时，generate_release_notes 产出的条目基本全落在「其他变更」。
 changelog:
   exclude:

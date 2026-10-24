@@ -49,7 +49,7 @@ go tool gocyclo -over 10 ./...
 | `make cover` | 覆盖率 |
 | `make size` | 规模红线 F-S1 / F-S3 / F-S5（F-S2 / F-S4 由 `go test ./internal/` 强制） |
 | `make drift` | 文档漂移 8 项 |
-| `make check` | **上面六个的总和**（收尾只需这一条） |
+| `make check` | **上面七个的总和**（收尾只需这一条） |
 | `make test-integration` | 真实调用上游，**会计费**，只在明确需要时跑 |
 
 `make test` 与 `make check` **不会**产生任何计费调用；计费测试全部藏在 `-tags integration` 后面。
@@ -60,7 +60,7 @@ go tool gocyclo -over 10 ./...
 make check
 ```
 
-六项全绿，然后逐条勾 PR 模板里的清单。
+七项全绿，然后逐条勾 PR 模板里的清单。
 
 ## 提交信息格式
 

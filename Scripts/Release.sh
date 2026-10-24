@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 文件名: Release.sh
-# 用途: 按 Contract/17 §七 的检查单顺序发版；项数由该表数据行数动态得出。
+# 用途: 按发布检查单顺序发版；项数由该表数据行数动态得出。
 # 创建日期: 2026-10-21
 # 作者: 小逸
 # 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 # 用法: Release.sh [--dry-run] [--skip-signature] [--no-push]
-#   环境：RELEASE_DEBT_REVIEWED=1 表示已完成 16 号 §五 的技术债逐条复核
+#   环境：RELEASE_DEBT_REVIEWED=1 表示已完成技术债逐条复核
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,7 +25,7 @@ for arg in "$@"; do
 done
 FAIL=0
 
-# 项数唯一真源：17 号 §七 的表格数据行。MUST NOT 在脚本里硬编码。
+# 项数唯一真源：发布检查单的表格数据行。MUST NOT 在脚本里硬编码。
 TOTAL=$(awk '/^## 七、发布检查单/{f=1;next} f && /^## /{f=0} f && /^\| [0-9]+ \|/{n++} END{print n+0}' "$DOC17")
 if [ "$TOTAL" -lt 1 ]; then
   echo "[FAIL] 无法从 $DOC17 解析检查项数" >&2
@@ -49,7 +49,7 @@ if [ -f Scripts/CheckRepoFiles.sh ]; then
   bash Scripts/CheckRepoFiles.sh . || bad "发布文件不齐或署名缺失"
   [ "$FAIL" -eq 0 ] && ok "A/B 级文件齐全"
 else
-  bad "Scripts/CheckRepoFiles.sh 不存在（Task-14 交付）"
+  bad "Scripts/CheckRepoFiles.sh 不存在"
 fi
 die_if_failed 1
 
@@ -201,7 +201,7 @@ fi
 die_if_failed 16
 
 # 17 技术债复核
-step 17 "16 号 §五 技术债已逐条复核"
+step 17 "技术债已逐条复核"
 if [ "${RELEASE_DEBT_REVIEWED:-}" = "1" ]; then
   ok "RELEASE_DEBT_REVIEWED=1"
 else
@@ -209,9 +209,9 @@ else
 fi
 die_if_failed 17
 
-# 18 文档已同步
-step 18 "docs/ 与 Doc/ 无 diff"
-if bash Scripts/SyncDocs.sh --check ../Doc . >/dev/null 2>&1; then ok "SyncDocs --check 通过"; else bad "docs/ 未同步"; fi
+# 18 文档根存在且非空
+step 18 "docs/ 存在且含文档"
+if find docs -name '*.md' -print -quit 2>/dev/null | grep -q .; then ok "docs/ 含 Markdown 文档"; else bad "docs/ 不存在或不含文档"; fi
 die_if_failed 18
 
 # 19 校验和 + 签名

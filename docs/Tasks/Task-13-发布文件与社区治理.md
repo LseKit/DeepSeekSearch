@@ -43,7 +43,7 @@ Task-01 建的是「能让 `make build` 通过」的最小骨架。本任务把�
 
 | 文件 | 动作 | 内容来源 |
 |---|---|---|
-| `GitHubSrc/AGENTS.md` | 新建 | **逐字复制** `Doc/Contract/19-AGENTS.md全文.md` 的两个标记之间的内容 |
+| `GitHubSrc/AGENTS.md` | 新建 | **逐字复制** `docs/Contract/19-AGENTS.md全文.md` 的两个标记之间的内容 |
 | `GitHubSrc/README.md` | **覆盖** | 下文 §5.1 全文 |
 | `GitHubSrc/CHANGELOG.md` | **覆盖** | 下文 §5.2 全文 |
 | `GitHubSrc/SECURITY.md` | 新建 | 下文 §5.3 全文 |
@@ -101,7 +101,7 @@ Task-01 建的是「能让 `make build` 通过」的最小骨架。本任务把�
 把 [DeepSeek 的 Search / Fetch API](https://api-docs.deepseek.com/zh-cn/guides/search)
 包装成一个 [MCP](https://modelcontextprotocol.io) 服务器。
 
-一个静态二进制，两种传输，三个工具。
+一个静态二进制，两种传输，五个工具。
 
 [![CI](https://github.com/LseKit/DeepSeekSearch/actions/workflows/ci.yml/badge.svg)](https://github.com/LseKit/DeepSeekSearch/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/LseKit/DeepSeekSearch.svg)](https://pkg.go.dev/github.com/LseKit/DeepSeekSearch)
@@ -119,13 +119,15 @@ DeepSeekSearch 做两件事：
 1. **`ds_search`** —— 调 DeepSeek 搜索接口，返回**已按相关性降序**的结果，并按 `detail` 四档分级，让调用方自己决定要多少信息。
 2. **`ds_fetch`** —— 抓网页正文，**大文档按标题分节**返回目录，模型按需取节，不会一次塞进 200k token。
 
-## 三个工具
+## 五个工具
 
 | 工具 | 作用 | 典型耗时 |
 |---|---|---|
 | `ds_search` | 网页搜索。支持 `site:` / `-site:` / `lang:` / `after:` / `before:` / 精确短语 | 1~5s |
 | `ds_fetch` | 正文抓取。超过 8000 字符返回目录，按 `section` 取节 | 0.1~30s |
 | `ds_health` | 本地诊断。检查 Key / 上游连通 / 缓存 / 生效配置。**不计费** | <50ms |
+| `ds_research` | 组合研究：1 次搜索 + 并发抓取前 N 条来源，返回带编号引用的材料 | 数秒 |
+| `ds_extract` | 批量抓取：1~10 个 URL 并发抓取，单条失败只影响该条 | 数秒 |
 
 ## 快速开始
 
@@ -256,7 +258,7 @@ DeepSeek 按次计费：**¥5 / 1000 次**，Search 与 Fetch 各自计算。
 - 缓存：SQLite（WAL）+ 跨进程 singleflight，防止并发重复计费
 - 韧性：per-key 令牌桶、抖动重试、重试预算、连续失败熔断、三层预算硬顶
 - MCP Resource：`ds://error-codes`（42 个错误码）、`ds://effective-config`（脱敏配置）、`ds://usage`（调用统计）
-- 安全：SSRF 私网黑名单（8 网段 + 3 种 IP 混淆）、Origin 校验、可选 Bearer 鉴权、常量时间比较
+- 安全：SSRF 私网黑名单（12 个网段 + 3 个域名后缀 + 6 种 IP 混淆写法）、Origin 校验、可选 Bearer 鉴权、常量时间比较
 - 版本号：编译期 `-ldflags` 注入，`--version` / `serverInfo.version` / `/healthz` 三处同源
 
 ### 变更

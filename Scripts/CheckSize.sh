@@ -2,28 +2,20 @@
 # 文件名: CheckSize.sh
 # 用途: 检查 F-S1 / F-S3 / F-S5 规模红线。
 #       F-S2 / F-S4 由 internal/arch_test.go 的 TestFunctionLength / TestNestingDepth 检查。
-#       无存量基线（DEBT-010 已于 2026-10-21 清零）：超标即 FAIL。
+#       无存量基线：超标即 FAIL。
 # 创建日期: 2026-10-20
 # 作者: 小逸
 # 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 # 用法: CheckSize.sh <代码根> <文档根>
-#   例: CheckSize.sh .        ../Doc     (在 GitHubSrc/ 下)
-#       CheckSize.sh GitHubSrc Doc       (在部署根下)
+#   例: CheckSize.sh .        docs     (在 GitHubSrc/ 下)
+#       CheckSize.sh GitHubSrc GitHubSrc/docs
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_ROOT="${1:-..}"
-DOC_ROOT="${2:-../../Doc}"
+DOC_ROOT="${2:-$SRC_ROOT/docs}"
 EXEMPT_FILE="$DOC_ROOT/Engineering/豁免台账.md"
 FAIL=0
-
-# CI 语境只有同步产物 docs/、没有 Doc/。TestSizeLimits 固定传 ../../Doc，
-# 若不回退，domain 的 F-S5 豁免加载不到 ⇒ 正确的代码在 CI 里被判违规。
-# 🔴 只在 CI 回退：本地漏传第二个参数仍 MUST 失败，否则「两参签名」失去意义。
-if [ ! -f "$EXEMPT_FILE" ] && [ -n "${CI:-}" ] && [ -f "$SRC_ROOT/docs/Engineering/豁免台账.md" ]; then
-  EXEMPT_FILE="$SRC_ROOT/docs/Engineering/豁免台账.md"
-  echo "ℹ️  文档根无豁免台账，回退到 $EXEMPT_FILE（CI 语境）"
-fi
 
 # ---------------------------------------------------------------------------
 # 读取豁免台账：解析 ```exempt 块，五段格式：
@@ -32,9 +24,15 @@ fi
 # ---------------------------------------------------------------------------
 declare -A EXEMPT=()
 EXEMPT_N=0
+TODAY="$(date +%F)"
 if [ -f "$EXEMPT_FILE" ]; then
   while IFS= read -r line; do
     [ -z "${line// }" ] && continue
+    review="$(awk '{print $NF}' <<<"$line")"
+    if [[ "$review" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$review" < "$TODAY" ]]; then
+      echo "F-S6 豁免已过期: $line"
+      FAIL=1
+    fi
     rule=$(awk '{print $2}' <<<"$line")
     [ "$rule" = "—" ] || [ "$rule" = "-" ] && continue
     file=$(awk '{print $1}' <<<"$line")
@@ -120,7 +118,7 @@ if [ -n "$GOCYCLO_BIN" ]; then
     FAIL=1
   done <<< "$cyclo_out"
 else
-  echo "⚠️  gocyclo 未安装，F-S3 未检查（go.mod 的 tool 指令或 90-Qoder执行手册 §二）"
+  echo "⚠️  gocyclo 未安装，圈复杂度未检查（用 go.mod 的 tool 指令安装）"
 fi
 
 if [ "$FAIL" -eq 0 ]; then

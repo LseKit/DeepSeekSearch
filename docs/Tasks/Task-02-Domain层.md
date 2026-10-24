@@ -38,7 +38,7 @@ MCP 工具失败时不能只返回一句错误消息 —— 调用方（一个 L
 | 文件 | 内容 |
 |---|---|
 | `internal/domain/errors.go` | 三个错误类型 + 构造函数 + `Error()` 实现 |
-| `internal/domain/codes.go` | 41 个 `Code*` 常量 + `CodeRegistry` 映射 |
+| `internal/domain/codes.go` | 42 个 `Code*` 常量 + `CodeRegistry` 映射 |
 | `internal/domain/errors_test.go` | 测试 |
 | `internal/domain/codes_test.go` | 测试（条数、唯一性、命名格式） |
 
@@ -46,9 +46,9 @@ MCP 工具失败时不能只返回一句错误消息 —— 调用方（一个 L
 
 | # | 要求 | 验证 |
 |:-:|---|---|
-| 1 | 常量**恰好 41 个**，取值与 `14-错误契约` §二 完全一致 | `grep -c $'^\tCode' codes.go` = 41（🔴 MUST 用 `$'\t'`：BRE 不解析 `\t`，字面写法恒返回 0） |
+| 1 | 常量**恰好 42 个**，取值与 `14-错误契约` §二 完全一致 | `grep -c $'^\tCode' codes.go` = 42（🔴 MUST 用 `$'\t'`：BRE 不解析 `\t`，字面写法恒返回 0） |
 | 2 | 常量命名 `Code<Name>`，`Name` 与错误码表 `name` 列相同（如 `CodeUpRateLimited`） | `codes_test.go` 断言 |
-| 3 | `CodeRegistry` 是 `map[int]CodeInfo`，长度 **41**（= 常量数，**含软错误 1080**） | 测试断言 `len(CodeRegistry) == 41` |
+| 3 | `CodeRegistry` 是 `map[int]CodeInfo`，长度 **42**（= 常量数，**含软错误 1080**） | 测试断言 `len(CodeRegistry) == 42` |
 | 4 | `CodeInfo` 含 4 字段：`Name`(string)、`Message`(string)、`Hint`(string)、`Retryable`(bool) | 结构体定义 |
 | 5 | `Message` 与 `Hint` 全中文，MUST NOT 为空 | 测试遍历断言非空 |
 | 6 | `Name` 全 UPPER_SNAKE，正则 `^[A-Z][A-Z0-9_]*$` | 测试用 regexp 断言 |
@@ -73,15 +73,15 @@ MCP 工具失败时不能只返回一句错误消息 —— 调用方（一个 L
 
 #### 3.2 🔴 1080 `VAL_SYNTAX_CONFLICT` 也 MUST 进 `CodeRegistry`
 
-1080 是**软错误**（只写 `warnings[]`，永不作为 `code` 返回）。但它的 `Name`/`Message`/`Hint` 仍是 `warnings[]` 文案的来源，且 `ds://error-codes` Resource 承诺「41 条全表」。
+1080 是**软错误**（只写 `warnings[]`，永不作为 `code` 返回）。但它的 `Name`/`Message`/`Hint` 仍是 `warnings[]` 文案的来源，且 `ds://error-codes` Resource 承诺「42 条全表」。
 
-⇒ `len(CodeRegistry) == len(常量) == 41`，**MUST NOT** 为了「它不会返回」而排除它 —— 那会造成 `CodeRegistry` 与常量数不等（历史上此处曾写 38 vs 39，两个数字都错且互相矛盾），并让 `ds://error-codes` 少一行。
+⇒ `len(CodeRegistry) == len(常量) == 42`，**MUST NOT** 为了「它不会返回」而排除它 —— 那会造成 `CodeRegistry` 与常量数不等（历史上此处曾写 38 vs 39，两个数字都错且互相矛盾），并让 `ds://error-codes` 少一行。
 
 ### 4 禁止事项
 
 | # | 禁止 |
 |:-:|---|
-| 1 | MUST NOT 用 `errors.New` 预定义 41 个哨兵错误（`var ErrXxx = errors.New(...)`）—— 我们只需要码，不需要哨兵值 |
+| 1 | MUST NOT 用 `errors.New` 预定义 42 个哨兵错误（`var ErrXxx = errors.New(...)`）—— 我们只需要码，不需要哨兵值 |
 | 2 | MUST NOT 在 `Message` 里加英文。`Name` 是给机器看的，`Message`/`Hint` 是给模型看的中文 |
 | 3 | MUST NOT 让 `Error()` 返回含 API Key 的字符串 |
 | 4 | MUST NOT 用 `iota` 生成码值 —— 码值是契约，必须字面量写死 |
@@ -157,7 +157,7 @@ type LocalError struct {
 func TestCodeRegistry(t *testing.T) {
     t.Parallel()
 
-    if got, want := len(CodeRegistry), 41; got != want {
+    if got, want := len(CodeRegistry), 42; got != want {
         t.Fatalf("CodeRegistry 长度 = %d, want %d（不许增删而不改文档）", got, want)
     }
 
@@ -212,12 +212,12 @@ $ go build ./... && echo BUILD_OK
 BUILD_OK
 
 $ grep -c $'^\tCode' internal/domain/codes.go   # $'\t' 由 bash 先展开成真制表符
-41
+42
 ```
 
 ### 8 完成定义（DoD）
 
-- [ ] 🔴 常量 **41** 个，且 `CodeRegistry` 长度 **41**（两者必须相等；原写「长度 39」与同一行的 41 自相矛盾，已修）
+- [ ] 🔴 常量 **42** 个，且 `CodeRegistry` 长度 **42**（两者必须相等；原写「长度 39」与同一行的 41 自相矛盾，已修）
 - [ ] `domain` 包 import 只有标准库
 - [ ] 提交：`feat(domain): 错误码体系与错误类型`
 
@@ -265,7 +265,7 @@ $ grep -c $'^\tCode' internal/domain/codes.go   # $'\t' 由 bash 先展开成真
 | 6 | Path 为 `/` 时归一为 `""`；非根路径**保留尾斜杠** | 测试：`/a/` 与 `/a` 是不同 key |
 | 7 | `HashUrl` 用 FNV-1a 64，返回 `uint64` | 同输入同输出 |
 | 8 | `SliceByRune(s, offset, limit)` 返回 `(string, bool)`，bool = 是否被截断 | 测试 emoji/中文/越界 |
-| 9 | 🔴 `Unescape` 的字符类**恰好 32 个字符**（ADR-013）：`[/#.,:{}()\-!*\|=_;\[\]<>"%?&@`+"`"+`~$^\\]`。**MUST 单趟 `ReplaceAllString`**，MUST NOT 多趟逐个替换 | 测试见 §6 的 32 字符全表用例 |
+| 9 | 🔴 `Unescape` 的字符类**恰好 32 个字符**（ADR-013）：`[/#.,:{}()\-!*\|=_;'+\[\]<>"%?&@`+"`"+`~$^\\]`。**MUST 单趟 `ReplaceAllString`**，MUST NOT 多趟逐个替换 | 测试见 §6 的 32 字符全表用例 |
 | 9.1 | 🔴 **为什么必须单趟**：实测存在 `\\\.` 这类**嵌套转义**（23 号 §4.5.1，26 处）。多趟替换时第一趟把 `\\\.` 变成 `\\.`、第二趟再变成 `\.` —— 过度反转义，输出与原文不符 |
 | 9.2 | 🔴 **只用于 fetch 的 content**：search 侧的 content/snippet/summary/title **不转义**（23 号 §4.5.2）。对其调用 `Unescape` 会把代码块里的字面量 `\n` 变成 `n`。调用方归属见 `Task-09` |
 | 9.3 | 漏掉的高频字符及后果（实测频次）：`\|`480 破坏 Markdown 表格、`\*`382、`\=`338、`\;`223、`\'`197、`\+`167、`\_`140 破坏标识符（`user\_name` → 与 `user_name` 不等）。完整表见 `12-数据契约` §6.1.1 |

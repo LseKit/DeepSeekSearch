@@ -36,7 +36,7 @@
 
 ### 2 要创建的文件
 
-`internal/resilience/clock.go`、`internal/resilience/limiter.go`、`internal/resilience/fake_clock_test.go`、`internal/resilience/limiter_test.go`
+`internal/resilience/clock.go`、`internal/resilience/ratelimit/limiter.go`、`internal/resilience/ratelimit/fake_clock_test.go`、`internal/resilience/ratelimit/limiter_test.go`
 
 ### 3 实现要求
 
@@ -205,7 +205,7 @@ $ go test ./internal/resilience/ -race -v -run 'TestLimiter|TestClock'
 
 ### 2 要创建的文件
 
-`internal/resilience/retry.go`、`internal/resilience/budget.go`、`internal/resilience/retry_test.go`、`internal/resilience/budget_test.go`
+`internal/resilience/retry/retry.go`、`internal/resilience/budget/budget.go`、`internal/resilience/retry/retry_test.go`、`internal/resilience/budget/budget_test.go`
 
 ### 3 实现要求
 
@@ -343,7 +343,7 @@ $ go test ./internal/resilience/ -race -v -run 'TestRetry|TestBudget'
 
 ### 2 要创建的文件
 
-`internal/resilience/circuit.go`、`internal/resilience/circuit_test.go`
+`internal/resilience/circuit/circuit.go`、`internal/resilience/circuit/circuit_test.go`
 
 ### 3 实现要求
 

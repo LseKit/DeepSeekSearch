@@ -29,17 +29,17 @@
 
 ### 1 上下文（自包含）
 
-配置按 section 分组，共 21 个 struct。`Config` 是**值类型**返回（不是指针），运行期只读。每个 struct 字段的 `toml` tag MUST 与 `13-配置契约` §二 模板里的键名逐字一致 —— `Scripts/CheckDocDrift.sh` 第 5 项会做集合 diff。
+配置按 section 分组，共 20 个 struct。`Config` 是**值类型**返回（不是指针），运行期只读。每个 struct 字段的 `toml` tag MUST 与 `13-配置契约` §二 模板里的键名逐字一致 —— `Scripts/CheckDocDrift.sh` 第 5 项会做集合 diff。
 
 ### 2 要创建的文件
 
-`internal/config/config.go`（16 个 struct + `Default()`）、`internal/config/config_test.go`
+`internal/config/config.go`（20 个 struct + `Default()`）、`internal/config/config_test.go`
 
 ### 3 实现要求
 
 | # | 要求 |
 |:-:|---|
-| 1 | 19 个 struct：`Config`（导出）+ `appConfig` `serverConfig` `serverHttpConfig` `upstreamConfig` `rateLimitConfig` `rateLimitBucketConfig` `rateLimitWarnConfig` `timeoutConfig` `timeoutToolConfig` `retryConfig` `retryBudgetConfig` `circuitConfig` `limitsConfig` `limitsBudgetConfig` `cacheConfig` `dedupeConfig` `searchConfig` `securityConfig` `logConfig`（段落类型**不导出**，外部只经字段访问；DEBT-010）。🔴 `HedgeConfig` **不存在**：`[hedge]` 已整段移出阶段一（DEBT-007），按 A-02 要求必须被当作未知键拒绝 |
+| 1 | 20 个 struct：`Config`（导出）+ `appConfig` `serverConfig` `serverHttpConfig` `upstreamConfig` `rateLimitConfig` `rateLimitBucketConfig` `rateLimitWarnConfig` `timeoutConfig` `timeoutToolConfig` `retryConfig` `retryBudgetConfig` `circuitConfig` `limitsConfig` `limitsBudgetConfig` `cacheConfig` `dedupeConfig` `searchConfig` `securityConfig` `logConfig`（段落类型**不导出**，外部只经字段访问；DEBT-010）。🔴 `HedgeConfig` **不存在**：`[hedge]` 已整段移出阶段一（DEBT-007），按 A-02 要求必须被当作未知键拒绝 |
 | 2 | `ApiKey` 与 `HttpToken` 字段 tag 为 `toml:"-" json:"-"`（MUST NOT 出现在配置解析与任何序列化） |
 | 3 | `Default() Config` 返回**与文档 §三 默认值列逐格相同**的配置 |
 | 4 | `Redacted() Config` 把 `ApiKey`/`HttpToken` 换成 `"***"`（为空时也换，避免泄漏「是否配置」） |
@@ -115,7 +115,7 @@ $ go test ./internal/config/ -run 'TestDefault|TestRedacted' -v
 
 ### 8 完成定义（DoD）
 
-- [ ] 21 个 struct 全部落地，`toml` tag 与文档 §二 键名一致（人工逐行核对一次）
+- [ ] 20 个 struct 全部落地，`toml` tag 与文档 §二 键名一致（人工逐行核对一次）
 - [ ] `TestDefault` 覆盖 ≥10 个关键默认值
 - [ ] 提交：`feat(config): 配置结构体与默认值`
 
@@ -148,7 +148,7 @@ $ go test ./internal/config/ -run 'TestDefault|TestRedacted' -v
 | 7 | 环境变量覆盖表：`DEEPSEEK_API_KEY` `DEEPSEEKSEARCH_HTTP_TOKEN` `DEEPSEEK_BASE_URL` `DEEPSEEKSEARCH_TRANSPORT` `DEEPSEEKSEARCH_LOG_LEVEL` `DEEPSEEKSEARCH_CONFIG`（只有这 6 个）。其中 `DEEPSEEKSEARCH_CONFIG` 只决定 `config.toml` 的路径（覆盖 `Load` 的 `configPath` 参数），不是 `Config` 字段；其余 5 个都是值覆盖 |
 | 8 | 每一项**值覆盖** MUST 同步更新 `sources`（`DEEPSEEKSEARCH_CONFIG` 是路径而非值，不写 `sources`） |
 | 9 | 路径不存在时 `Load` 返回 error（MUST NOT 静默用默认值），`LoadFromEnvOnly` 不读任何文件 |
-| 10 | `synth.enabled = true` → 返回 error。阶段一 MUST 为 `false`（`13-配置契约` §1.1 写明了这条，但原检查表漏列，语义见错误码 **1095**） |
+| 10 | 配置里出现 `[synth]` 段或 `synth.enabled` → 按未知键返回 error（**3090**，不是工具参数错误 1095）；`synthesize` 仅是 `ds_search` 的拒绝参数 |
 | 11 | 配置模板中 **MUST NOT 出现 `[hedge]` 段** —— 阶段一无任何 Task 认领该实现（见 `16-技术债登记表` DEBT-007）。若解析到 `hedge` 段，按未知键处理（要求 3） |
 | 12 | `transport = "stdio"` 且日志目的地包含 stdout → 返回 error。stdio 下 stdout 是 MCP 协议通道，一行日志就能打断整个会话（见 `Task-11`） |
 
