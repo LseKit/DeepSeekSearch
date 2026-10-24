@@ -31,7 +31,7 @@ import (
 // modulePath 与 go.mod 的 module 行一致。
 const modulePath = "github.com/LseKit/DeepSeekSearch"
 
-// allowedImports 是包级的**项目内** import 白名单（与 Contract 10 §二、22 号 §2.1 三处同源）。
+// allowedImports 是包级的**项目内** import 白名单。
 var allowedImports = map[string][]string{
 	"internal/domain":               {}, // 零依赖
 	"internal/toolschema":           {}, // 纯数据：MCP 工具 JSON Schema 字面量，零依赖
@@ -44,7 +44,7 @@ var allowedImports = map[string][]string{
 	"internal/resilience/budget":    {"internal/domain", "internal/resilience"},
 	"internal/resilience/circuit":   {"internal/domain", "internal/resilience"},
 	"internal/resilience/cache":     {"internal/domain", "internal/resilience"},
-	"internal/health":               {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/resilience/ratelimit", "internal/resilience/circuit"},
+	"internal/health":               {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/resilience/ratelimit", "internal/resilience/circuit", "internal/mcputil"},
 	"internal/mcputil":              {"internal/domain"},
 	"internal/toolvalidate":         {"internal/domain"},
 	"internal/tools":                {"internal/domain", "internal/config", "internal/deepseek", "internal/resilience", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate"},
@@ -52,17 +52,17 @@ var allowedImports = map[string][]string{
 	"cmd/deepseeksearch":            {"internal/domain", "internal/config", "internal/logging", "internal/deepseek", "internal/resilience", "internal/resilience/ratelimit", "internal/resilience/retry", "internal/resilience/budget", "internal/resilience/circuit", "internal/resilience/cache", "internal/tools", "internal/toolschema", "internal/health", "internal/mcputil", "internal/toolvalidate", "internal/transport"},
 }
 
-// allowedExternal 是包级的**标准库 + 第三方**白名单（与 Contract 10 §2.1~2.8、22 号 §2.1 同源）。
+// allowedExternal 是包级的**标准库 + 第三方**白名单。
 // 以 "/" 结尾的项按前缀匹配，其余按全等匹配（见 matchExternal）。
 var allowedExternal = map[string][]string{
 	"internal/domain": {
 		"errors", "fmt", "strings", "strconv", "net/url", "net/netip", "time", "sort",
-		"regexp", "unicode", "unicode/utf8", "hash/fnv", "math/rand/v2", "crypto/rand",
+		"regexp", "unicode", "unicode/utf8", "hash/fnv", "math/rand/v2", "crypto/rand", "crypto/sha256",
 		"context", "encoding/json", "encoding/hex", "html", "io", "net",
 	},
 	"internal/config": {
 		"os", "fmt", "errors", "strconv", "strings", "regexp", "time", "path/filepath", "runtime",
-		"maps", "math", "net", "net/url", "reflect", "sort", "unicode/utf8",
+		"maps", "math", "net", "net/url", "reflect", "sort", "unicode/utf8", "io/fs",
 		"github.com/BurntSushi/toml", "github.com/joho/godotenv",
 	},
 	"internal/logging": {
@@ -103,16 +103,17 @@ var allowedExternal = map[string][]string{
 	},
 	"internal/toolschema": {}, // 纯数据包，无 import
 	"internal/mcputil": {
-		"encoding/json", "fmt", "strings", "github.com/modelcontextprotocol/go-sdk/mcp",
+		"bytes", "encoding/json", "errors", "fmt", "strings", "github.com/modelcontextprotocol/go-sdk/mcp",
 	},
-	"internal/toolvalidate": {"fmt", "regexp", "strings", "time"},
+	"internal/toolvalidate": {"fmt", "net/netip", "regexp", "strconv", "strings", "time"},
 	"internal/health": {
-		"context", "crypto/sha256", "encoding/hex", "encoding/json", "fmt", "log/slog", "time",
+		"context", "crypto/sha256", "encoding/hex", "encoding/json", "fmt", "log/slog",
+		"sort", "sync", "sync/atomic", "time",
 		"github.com/modelcontextprotocol/go-sdk/mcp",
 	},
 	"internal/transport": {
 		"context", "net/http", "os", "fmt", "errors", "time", "log/slog", "crypto/subtle",
-		"encoding/json", "net", "strings", "io", "runtime/debug", "strconv",
+		"encoding/json", "net", "net/url", "strings", "io", "runtime/debug", "strconv",
 		"github.com/modelcontextprotocol/go-sdk/mcp",
 	},
 	"cmd/deepseeksearch": {
@@ -266,7 +267,7 @@ func TestPackageDependencies(t *testing.T) {
 		allowIn, okIn := allowedImports[pkg]
 		allowExt, okExt := allowedExternal[pkg]
 		if !okIn || !okExt {
-			t.Errorf("包 %s 未登记进白名单（新增包 MUST 先改 10 号 §二 与 22 号 §2.1，再改这里）", pkg)
+			t.Errorf("包 %s 未登记进白名单（新增包 MUST 先登记再改这里）", pkg)
 			continue
 		}
 		internal := 0
@@ -441,7 +442,7 @@ func TestNestingDepth(t *testing.T) {
 // TestSizeLimits 把 CheckSize.sh（F-S1/F-S3/F-S5）接进 go test。
 //
 // 路径口径：go test 的工作目录是包目录（GitHubSrc/internal/），
-// 所以脚本在 ../Scripts/、代码根是 ..、文档根是 ../../Doc（部署根的 Doc/）。
+// 所以脚本在 ../Scripts/、代码根是 ..、第二个参数传仓库内文档根。
 // CI 环境脚本缺失 MUST Fatalf：静默 Skip 会让架构测试在脚本缺失时变绿。
 func TestSizeLimits(t *testing.T) {
 	const script = "../Scripts/CheckSize.sh"
@@ -449,19 +450,19 @@ func TestSizeLimits(t *testing.T) {
 		if os.Getenv("CI") != "" {
 			t.Fatalf("CI 环境中 %s 不存在，规模红线无法验证: %v", script, err)
 		}
-		t.Skipf("本地未找到 %s（Task-11 之后才存在）；改用 20-编码规范 §3.1 的自查命令", script)
+		t.Skipf("本地未找到 %s，跳过规模红线自检", script)
 		return
 	}
-	out, err := exec.Command("bash", script, "..", "../../Doc").CombinedOutput()
+	out, err := exec.Command("bash", script, "..", "../docs").CombinedOutput()
 	if err != nil {
 		t.Fatalf("规模红线违规:\n%s", out)
 	}
 	t.Logf("CheckSize.sh 输出:\n%s", out)
 }
 
-// TestToolNames 锁死三个工具名与固定顺序。
+// TestToolNames 锁死五个工具名与固定顺序。
 func TestToolNames(t *testing.T) {
-	got := make([]string, 0, 3)
+	got := make([]string, 0, 5)
 	for _, tool := range tools.Registry() {
 		got = append(got, tool.Name())
 	}
@@ -471,7 +472,7 @@ func TestToolNames(t *testing.T) {
 	}
 }
 
-// TestToolAnnotations 校验三个工具都带三项注解（契约 15 §七之二）。
+// TestToolAnnotations 校验每个工具都带三项注解。
 func TestToolAnnotations(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
