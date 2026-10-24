@@ -1,5 +1,5 @@
 // 文件名: config.go
-// 用途: 定义配置结构体、内置默认值与脱敏/来源查询，字段与 13-配置契约 §二 逐键对应。
+// 用途: 定义配置结构体、内置默认值与脱敏/来源查询，字段与 config.example.toml 逐键对应。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -31,7 +31,7 @@ const (
 // Config 是启动后不再变更的配置快照。
 // 全部字段在 Load 中填充、在 Validate 中校验，运行期只读。
 // 顶层 section 字段故意不带 toml tag：CheckDocDrift 会把 tag 当作配置键，
-// 给段名加 tag 会让「代码有而文档无」。子段按字段名大小写不敏感匹配。
+// 给段名加 tag 会让「代码有而配置模板无」。子段按字段名大小写不敏感匹配。
 type Config struct {
 	App       appConfig             `json:"app"`
 	Server    serverConfig          `json:"server"`
@@ -46,8 +46,8 @@ type Config struct {
 	Search    searchConfig          `json:"search"`
 	Security  securityConfig        `json:"security"`
 	Log       logConfig             `json:"log"`
-	ApiKey    string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
-	HttpToken string                `toml:"-" json:"-"` //nolint:revive // 契约字段名，见 11 号 §2.1
+	ApiKey    string                `toml:"-" json:"-"` //nolint:revive // 对外字段名固定为 ApiKey/HttpToken
+	HttpToken string                `toml:"-" json:"-"` //nolint:revive // 对外字段名固定为 ApiKey/HttpToken
 	sources   map[string]SourceKind `toml:"-" json:"-"`
 }
 
@@ -60,12 +60,12 @@ type appConfig struct {
 // serverConfig 管「怎么和客户端说话」。
 type serverConfig struct {
 	Transport string           `toml:"transport" json:"transport"`
-	Http      serverHttpConfig `json:"http"` //nolint:revive // 契约字段名，见 Task-03 A-01 骨架
+	Http      serverHttpConfig `json:"http"` //nolint:revive // 对外字段名固定为 Http
 }
 
 // serverHttpConfig 只在 Transport == "streamable-http" 时生效。
 // 默认值全部指向最安全的一端：只听回环、开 Origin 校验、开 Host 校验、不鉴权。
-type serverHttpConfig struct { //nolint:revive // 契约类型名，见 Task-03 A-01 骨架
+type serverHttpConfig struct { //nolint:revive // 对外类型名固定为 serverHttpConfig
 	Host                        string   `toml:"host" json:"host"`
 	Port                        int      `toml:"port" json:"port"`
 	Path                        string   `toml:"path" json:"path"`
@@ -129,14 +129,11 @@ type timeoutToolConfig struct {
 
 // retryConfig 管重试开关、退避表与重试预算。
 type retryConfig struct {
-	Enabled         bool              `toml:"enabled" json:"enabled"`
-	JitterMode      string            `toml:"jitter_mode" json:"jitter_mode"`
-	FixedMs         []int             `toml:"fixed_ms" json:"fixed_ms"`
-	SpreadMs        []int             `toml:"spread_ms" json:"spread_ms"`
-	ParseQPSFrom429 bool              `toml:"parse_qps_from_429" json:"parse_qps_from_429"`
-	AdaptCooldownS  int               `toml:"adapt_cooldown_s" json:"adapt_cooldown_s"`
-	RetryOn         []string          `toml:"retry_on" json:"retry_on"`
-	Budget          retryBudgetConfig `json:"budget"`
+	Enabled    bool              `toml:"enabled" json:"enabled"`
+	JitterMode string            `toml:"jitter_mode" json:"jitter_mode"`
+	FixedMs    []int             `toml:"fixed_ms" json:"fixed_ms"`
+	SpreadMs   []int             `toml:"spread_ms" json:"spread_ms"`
+	Budget     retryBudgetConfig `json:"budget"`
 }
 
 // retryBudgetConfig 用于封顶重试放大比例，防止上游变慢时形成重试风暴。
@@ -190,11 +187,11 @@ type cacheConfig struct {
 	DegradedOk     bool   `toml:"degraded_ok" json:"degraded_ok"`
 }
 
-// dedupeConfig 管无损去重：URL 归一化、转载合并与单域名配额。
+// dedupeConfig 管无损去重：URL 归一化、单域名配额与跟踪参数表。
+// 转载合并恒定开启、不可配 —— 见 domain.Dedupe 的第二层。
 type dedupeConfig struct {
 	Enabled        bool     `toml:"enabled" json:"enabled"`
 	MaxPerDomain   int      `toml:"max_per_domain" json:"max_per_domain"`
-	MergeReposts   bool     `toml:"merge_reposts" json:"merge_reposts"`
 	TrackingParams []string `toml:"tracking_params" json:"tracking_params"`
 }
 
@@ -207,7 +204,7 @@ type searchConfig struct {
 }
 
 // securityConfig 是可追加的主机名黑名单。IP 网段基线（私网/回环/链路本地/CGNAT 等）
-// 是代码硬编码的固定纵深防御（见 tools/fetch_validate.go 的 blockedNets），不可配。
+// 是代码硬编码的固定纵深防御（见 internal/toolvalidate/ssrf.go 的 blockedNets），不可配。
 type securityConfig struct {
 	BlockedHosts []string `toml:"blocked_hosts" json:"blocked_hosts"`
 }
@@ -231,7 +228,7 @@ type logConfig struct {
 	RedactQueryKeys []string `toml:"redact_query_keys" json:"redact_query_keys"`
 }
 
-// Default 返回与 13-配置契约 §三 默认值列逐格一致的内置配置。
+// Default 返回内置默认配置，与 config.example.toml 的默认值逐格一致。
 func Default() Config {
 	cfg := Config{
 		App:       defaultApp(),
@@ -254,7 +251,7 @@ func Default() Config {
 
 // Redacted 返回可安全打印与外发的副本：ApiKey/HttpToken 一律替换为 ***。
 // 即使字段为空也替换，避免泄漏「是否配置过凭据」。
-// 值接收者是 11 号 §二 的接口契约，不能改成指针。
+// 值接收者由接口约定决定，不能改成指针。
 func (c Config) Redacted() Config { //nolint:gocritic // 值接收者由契约固定
 	c.ApiKey = "***"
 	c.HttpToken = "***"
@@ -263,7 +260,7 @@ func (c Config) Redacted() Config { //nolint:gocritic // 值接收者由契约�
 }
 
 // Source 返回某个配置项最终取自哪一层；未知 key 返回 SourceUnknown。
-// 值接收者是 11 号 §二 的接口契约，不能改成指针。
+// 值接收者由接口约定决定，不能改成指针。
 func (c Config) Source(key string) SourceKind { //nolint:gocritic // 值接收者由契约固定
 	if kind, ok := c.sources[key]; ok {
 		return kind
@@ -328,14 +325,11 @@ func defaultTimeout() timeoutConfig {
 
 func defaultRetry() retryConfig {
 	return retryConfig{
-		Enabled:         true,
-		JitterMode:      "fixed_plus_random",
-		FixedMs:         []int{1000, 3000, 8000},
-		SpreadMs:        []int{1000, 2000, 4000},
-		ParseQPSFrom429: true,
-		AdaptCooldownS:  60,
-		RetryOn:         []string{"429", "408", "502", "503", "504", "net_error", "timeout"},
-		Budget:          retryBudgetConfig{Enabled: true, Ratio: 0.10, WindowS: 60},
+		Enabled:    true,
+		JitterMode: "fixed_plus_random",
+		FixedMs:    []int{1000, 3000, 8000},
+		SpreadMs:   []int{1000, 2000, 4000},
+		Budget:     retryBudgetConfig{Enabled: true, Ratio: 0.10, WindowS: 60},
 	}
 }
 
@@ -377,7 +371,6 @@ func defaultDedupe() dedupeConfig {
 	return dedupeConfig{
 		Enabled:      true,
 		MaxPerDomain: 3,
-		MergeReposts: true,
 		TrackingParams: []string{
 			"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
 			"fbclid", "gclid", "gbraid", "wbraid", "msclkid", "yclid", "dclid", "twclid", "igshid",

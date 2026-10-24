@@ -102,10 +102,11 @@ func checkPhaseOne(cfg *Config) error {
 }
 
 // isStdoutDest 识别把日志写到 stdout 的写法。
-// 配置里没有独立的 dest 键，dir 是唯一目的地；"-" 与 /dev/stdout 是常见的 Unix 别名。
+// 配置里没有独立的 dest 键，dir 是唯一目的地；"-" 与 /dev/stdout 是常见的 Unix 别名，
+// /dev/fd/1 与 /proc/self/fd/1 指向同一个 fd（漏了它们，stdio 的协议通道就会被日志污染）。
 func isStdoutDest(dir string) bool {
 	switch strings.ToLower(strings.TrimSpace(dir)) {
-	case "stdout", "-", "/dev/stdout":
+	case "stdout", "-", "/dev/stdout", "/dev/fd/1", "/proc/self/fd/1":
 		return true
 	default:
 		return false

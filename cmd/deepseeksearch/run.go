@@ -16,7 +16,7 @@ import (
 	"time"
 
 	// 副作用导入：Windows 与 distroless 镜像没有系统 tzdata，
-	// 缺它则 LoadLocation("Asia/Shanghai") 必然失败、发布物启动即 exit 1。
+	// 缺它则 log.timezone 指定的时区加载必然失败、发布物启动即 exit 1。
 	_ "time/tzdata"
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
@@ -61,12 +61,6 @@ func runWith(args []string, stdout, stderr io.Writer, stop <-chan struct{}, newC
 		return 0
 	}
 
-	tz, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		writef(stderr, "%s\n", "时区库加载失败（正常情况下不可能：已嵌入 time/tzdata，请检查构建是否误加了 -tags timetzdata_exclude）")
-		return 1
-	}
-
 	cfg, warnings, err := loadConfig(opts)
 	if err != nil {
 		writef(stderr, "配置错误: %v\n", err)
@@ -75,6 +69,16 @@ func runWith(args []string, stdout, stderr io.Writer, stop <-chan struct{}, newC
 	for _, warning := range warnings {
 		writef(stderr, "warning: %s\n", warning)
 	}
+
+	// 时区 MUST 取自配置：写死在代码里会让 log.timezone 变成假开关 ——
+	// 校验通过、ds_health 也按配置显示，日志时间戳却纹丝不动。
+	tz, err := time.LoadLocation(cfg.Log.Timezone)
+	if err != nil {
+		writef(stderr, "log.timezone=%q 加载失败: %v（正常情况下不可能：已嵌入 time/tzdata，请检查构建是否误加了 -tags timetzdata_exclude）\n",
+			cfg.Log.Timezone, err)
+		return 1
+	}
+
 	if opts.checkOnly {
 		printCheckSummary(stdout, &cfg)
 		return 0

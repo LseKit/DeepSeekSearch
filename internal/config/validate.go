@@ -69,7 +69,7 @@ func (c *Config) validateUpstream() []error {
 	var errs []error
 	validURL := false
 	if u, err := url.Parse(c.Upstream.BaseURL); err == nil && u != nil {
-		validURL = strings.EqualFold(u.Scheme, "https") && u.Host != ""
+		validURL = strings.EqualFold(u.Scheme, "https") && u.Host != "" && u.User == nil
 	}
 	if !validURL {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
@@ -166,7 +166,7 @@ func (c *Config) validateWarnCalls() []error {
 	return errs
 }
 
-// validateInflightQuota 按 Task-06 §A-01 3.2 的公式校验两个配额之和不超过总额度。
+// validateInflightQuota 校验两个配额之和不超过总额度。
 func (c *Config) validateInflightQuota() []error {
 	share := c.RateLimit.SearchShare
 	total := c.RateLimit.MaxInflight
@@ -393,7 +393,7 @@ func (c *Config) collectWarnings() []string {
 	warnings := make([]string, 0, 4)
 	warnings = append(warnings, c.timeoutWarnings("timeout.search", c.Timeout.Search)...)
 	warnings = append(warnings, c.timeoutWarnings("timeout.fetch", c.Timeout.Fetch)...)
-	// ADR-018：暴露 + 不鉴权不再拒绝启动（原 validateServer 的 3092 error 已删），
+	// 暴露 + 不鉴权不再拒绝启动（原 validateServer 的 3092 error 已删），
 	// 但 MUST 留一条 warning —— 裸奔时唯一能被发现的痕迹就是这行日志。
 	if (c.Server.Http.Host == "0.0.0.0" || c.Server.Http.AllowNonLocalHost) && !c.Server.Http.AuthEnabled {
 		warnings = append(warnings, "server.http: host=0.0.0.0 或 allow_non_local_host=true 且 auth_enabled=false —— 任何能连上该端口的人都能花你的钱（3092）")
@@ -410,8 +410,10 @@ func (c *Config) timeoutWarnings(name string, t timeoutToolConfig) []string {
 	var warnings []string
 	layer := c.Timeout.DialMs + c.Timeout.TLSHandshakeMs + c.Timeout.ResponseHeaderMs
 	if t.PerAttemptMs < layer {
+		// 因果别写反：per_attempt 是包整趟往返的 ctx 闸门，它先到点，
+		// 于是靠后的分层值（通常是 response_header_ms）永远走不到自己的上限。
 		warnings = append(warnings, fmt.Sprintf(
-			"%s.per_attempt_ms=%d < dial_ms+tls_handshake_ms+response_header_ms=%d：分层超时会先于单次尝试生效，per_attempt_ms 形同虚设",
+			"%s.per_attempt_ms=%d < dial_ms+tls_handshake_ms+response_header_ms=%d：per_attempt_ms 是实际生效的硬闸门，靠后的分层超时（尤其 response_header_ms）永远走不到自己的上限；要让分层超时生效，调大 per_attempt_ms 或调小 response_header_ms",
 			name, t.PerAttemptMs, layer))
 	}
 	if t.TotalTimeoutMs > 115000 {

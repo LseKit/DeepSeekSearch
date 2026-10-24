@@ -20,7 +20,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
-// 精确全等而非子串：auth_token_env 这类描述用途的键名必须放行（13 号 §1.1.1）。
+// 精确全等而非子串：auth_token_env 这类描述用途的键名必须放行。
 var secretKeyNames = map[string]bool{
 	"api_key": true, "apikey": true, "api_secret": true,
 	"token": true, "secret": true, "password": true, "passwd": true,
@@ -47,7 +47,7 @@ func checkTomlSecrets(data []byte) error {
 				"禁止在 config.toml 放密钥：键名 %q%s", path, lineHint(lines[path])))
 			return
 		}
-		if text, ok := value.(string); ok && isSecretValue(text) {
+		if text, ok := value.(string); ok && isSecretValue(path, text) {
 			errs = append(errs, configErr(domain.CodeLocConfigInvalid,
 				"禁止在 config.toml 放密钥：值形态疑似密钥，键 %q%s", path, lineHint(lines[path])))
 		}
@@ -94,11 +94,29 @@ func visitLeaf(prefix string, value any, visit func(string, any)) {
 	}
 }
 
-func isSecretValue(s string) bool {
+// isSecretValue 先匹配已知密钥前缀；熵启发式只在键名本身像凭据时启用。
+// 否则 user_agent / base_url 这类长且高熵的合法值会被误判成密钥，服务直接起不来。
+func isSecretValue(keyPath, s string) bool {
 	if secretValuePattern.MatchString(s) {
 		return true
 	}
+	if !looksSecretKey(keyPath) {
+		return false
+	}
 	return utf8.RuneCountInString(s) >= 32 && shannonEntropy(s) >= 4.0
+}
+
+func looksSecretKey(keyPath string) bool {
+	last := strings.ToLower(keyPath)
+	if i := strings.LastIndex(last, "."); i >= 0 {
+		last = last[i+1:]
+	}
+	for _, marker := range []string{"key", "token", "secret", "password", "credential", "auth"} {
+		if strings.Contains(last, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func shannonEntropy(s string) float64 {

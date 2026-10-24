@@ -7,6 +7,8 @@
 package config
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"runtime"
 
@@ -20,7 +22,10 @@ import (
 func applyDotEnv(cfg *Config, path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
-		// .env 是 API Key 的唯一文件来源，静默跳过只会把错误推迟成第一次调用时的 2401。
+		if errors.Is(err, fs.ErrNotExist) {
+			// 纯环境变量部署是合法配置；凭据缺失由 checkPhaseOne 统一报 3040。
+			return nil
+		}
 		return configErr(domain.CodeLocNoAPIKey, "读取 .env 失败: %v", err)
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
@@ -33,7 +38,11 @@ func applyDotEnv(cfg *Config, path string) error {
 		return configErr(domain.CodeLocConfigInvalid, "解析 .env 失败: %v", err)
 	}
 	applyDotEnvValue(cfg, values, "DEEPSEEK_API_KEY", "api_key", func(v string) { cfg.ApiKey = v })
-	applyDotEnvValue(cfg, values, "DEEPSEEKSEARCH_HTTP_TOKEN", "http_token", func(v string) { cfg.HttpToken = v })
+	tokenEnv := cfg.Server.Http.AuthTokenEnv
+	if tokenEnv == "" {
+		tokenEnv = "DEEPSEEKSEARCH_HTTP_TOKEN"
+	}
+	applyDotEnvValue(cfg, values, tokenEnv, "http_token", func(v string) { cfg.HttpToken = v })
 	return nil
 }
 
@@ -50,14 +59,14 @@ func applyDotEnvValue(cfg *Config, values map[string]string, envName, sourceKey 
 	cfg.sources[sourceKey] = SourceDotEnv
 }
 
-// applyEnv 应用 13 号 §一 的环境变量覆盖。DEEPSEEKSEARCH_CONFIG 已在 Load 中作为路径处理。
+// applyEnv 应用环境变量覆盖。DEEPSEEKSEARCH_CONFIG 已在 Load 中作为路径处理。
 func applyEnv(cfg *Config) {
 	if value, ok := os.LookupEnv("DEEPSEEK_API_KEY"); ok {
 		cfg.ApiKey = value
 		cfg.sources["api_key"] = SourceEnv
 	}
 
-	// auth_token_env 让 token 的变量名可配；为空时回落到契约默认名。
+	// auth_token_env 让 token 的变量名可配；为空时回落到内置默认名。
 	tokenEnv := cfg.Server.Http.AuthTokenEnv
 	if tokenEnv == "" {
 		tokenEnv = "DEEPSEEKSEARCH_HTTP_TOKEN"

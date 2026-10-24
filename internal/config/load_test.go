@@ -16,6 +16,15 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
+func TestCheckTomlSecretsAllowsUserAgent(t *testing.T) {
+	t.Parallel()
+
+	data := []byte("[upstream]\nuser_agent = \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\"\n")
+	if err := checkTomlSecrets(data); err != nil {
+		t.Fatalf("合法 UA 被误判为密钥: %v", err)
+	}
+}
+
 func TestLoad(t *testing.T) {
 	envPath := writeEnvFile(t, 0o600, "DEEPSEEK_API_KEY=sk-test\n")
 
@@ -93,10 +102,10 @@ func TestLoad(t *testing.T) {
 			wantCode:   domain.CodeLocConfigInvalid,
 		},
 		{
-			name:       ".env 不存在报错",
+			name:       ".env 不存在时由凭据检查兜底",
 			configPath: "testdata/valid.toml",
 			envPath:    "testdata/does_not_exist.env",
-			wantErr:    []string{"读取 .env 失败"},
+			wantErr:    []string{"DEEPSEEK_API_KEY 未配置"},
 			wantCode:   domain.CodeLocNoAPIKey,
 		},
 	}
