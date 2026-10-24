@@ -72,13 +72,29 @@ func (m *middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.next.ServeHTTP(w, r)
 }
 
-// middlewareNames 是 §六之二 固定链的请求经过顺序；mcp 是链末端。
+// middlewareNames 是固定中间件链的请求经过顺序；mcp 是链末端。
 var middlewareNames = []string{
-	"recover", "accessLog", "securityHeaders", "healthz", "admission",
+	"recover", "accessLog", "securityHeaders", "healthz", "pathGuard", "admission",
 	"crossOrigin", "hostGuard", "authGuard", "bodyLimit", "mcp",
 }
 
-// admission 是入口并发闸门（ADR-019）：槽位耗尽立即 429，不排队。
+// pathGuard 只放行配置的 MCP 路径。SDK 的 StreamableHTTPHandler 不检查
+// URL.Path，不拦的话任意路径都会成为 MCP 入口。
+func pathGuard(cfg *config.Config, next http.Handler) http.Handler {
+	want := cfg.Server.Http.Path
+	if want == "" {
+		return &middleware{name: "pathGuard", next: next}
+	}
+	return &middleware{name: "pathGuard", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != want {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})}
+}
+
+// admission 是入口并发闸门：槽位耗尽立即 429，不排队。
 // 位于 healthz 之后 —— 探活永远可用；位于鉴权之前 —— 超载时不必先做鉴权。
 func admission(cfg *config.Config, log *slog.Logger, next http.Handler) http.Handler {
 	limit := cfg.Server.Http.MaxConcurrentRequests
@@ -98,7 +114,7 @@ func admission(cfg *config.Config, log *slog.Logger, next http.Handler) http.Han
 	})}
 }
 
-// chain 按 Contract 15 §六之二的字面顺序装配。顺序写死在这一处，
+// chain 按固定顺序装配。顺序写死在这一处，
 // 因为错一位的两种后果（浏览器客户端全挂 / SSE 静默卡死）都不报错。
 // 写法：从最内层往外包，所以代码顺序与请求经过顺序相反。
 func chain(cfg *config.Config, build domain.BuildInfo, log *slog.Logger, startedAt time.Time,
@@ -109,6 +125,7 @@ func chain(cfg *config.Config, build domain.BuildInfo, log *slog.Logger, started
 	h = hostGuard(cfg, log, h)
 	h = policy.handler(h)
 	h = admission(cfg, log, h)
+	h = pathGuard(cfg, h)
 	h = healthzHandler(cfg, build, startedAt, cache, log, h)
 	h = securityHeaders(h)
 	h = accessLog(log, cfg, h)
@@ -132,26 +149,42 @@ func accessLog(log *slog.Logger, cfg *config.Config, next http.Handler) http.Han
 	return &middleware{name: "accessLog", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
+		// MUST 用 defer 记录：recover 在最外层，panic 会越过本层往上冒，
+		// 写在 next.ServeHTTP 之后的日志对 500 请求永远不执行 ——
+		// 恰恰是最该留痕的那一类请求一条 access 日志都没有。
+		// 记完把原始 panic 值原样重抛，最外层 recover 仍能拿到它打栈。
+		defer func() {
+			rec := recover()
+			code := sw.code
+			switch {
+			case rec != nil:
+				// recover 在本层之外，此时它还没写 500，sw.code 恒为 0。
+				code = http.StatusInternalServerError
+			case code == 0:
+				code = http.StatusOK
+			}
+			ms := time.Since(start).Milliseconds()
+			// 传输层访问日志，不属于业务事件。
+			log.Info("http.access", "method", r.Method, "path", r.URL.Path,
+				"status", code, "bytes", sw.n, "ms", ms)
+			if cfg.Log.SlowMs > 0 && ms > int64(cfg.Log.SlowMs) {
+				log.Warn(domain.EvWarnSlow, "method", r.Method, "path", r.URL.Path,
+					"ms", ms, "slow_ms", cfg.Log.SlowMs)
+			}
+			if rec != nil {
+				panic(rec)
+			}
+		}()
 		next.ServeHTTP(sw, r)
-
-		code := sw.code
-		if code == 0 {
-			code = http.StatusOK
-		}
-		ms := time.Since(start).Milliseconds()
-		// 传输层访问日志，不属于 Task-04 的 28 个业务事件。
-		log.Info("http.access", "method", r.Method, "path", r.URL.Path,
-			"status", code, "bytes", sw.n, "ms", ms)
-		if cfg.Log.SlowMs > 0 && ms > int64(cfg.Log.SlowMs) {
-			log.Warn(domain.EvWarnSlow, "method", r.Method, "path", r.URL.Path,
-				"ms", ms, "slow_ms", cfg.Log.SlowMs)
-		}
 	})}
 }
 
 func securityHeaders(next http.Handler) http.Handler {
 	return &middleware{name: "securityHeaders", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// 响应体是抓取来的网页内容与调用参数，MUST NOT 被中间层留存：
+		// 反代或浏览器缓存命中时会把 A 客户端的结果发给 B 客户端。
+		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})}
 }
@@ -159,7 +192,7 @@ func securityHeaders(next http.Handler) http.Handler {
 // originPolicy 包住标准库的 CrossOriginProtection，并补上它不做的两件事：
 //  1. 收发 CORS 头（标准库只拒绝，不发 Access-Control-Allow-*）；
 //  2. 应答 preflight（标准库把 OPTIONS 视为安全方法直接放行，preflight 会一路走到
-//     authGuard 吃 401 —— 这正是 §六之二 要消灭的浏览器端故障）。
+//     authGuard 吃 401 —— 这正是 originPolicy 要避免的浏览器端故障）。
 type originPolicy struct {
 	enabled    bool
 	protection *http.CrossOriginProtection
@@ -243,8 +276,13 @@ func authGuard(cfg *config.Config, log *slog.Logger, next http.Handler) http.Han
 		return &middleware{name: "authGuard", next: next}
 	}
 	want := []byte(cfg.HttpToken)
+	if len(want) == 0 {
+		return &middleware{name: "authGuard", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, log, http.StatusInternalServerError, domain.CodeLocInternal, "鉴权已启用但 token 为空")
+		})}
+	}
 	return &middleware{name: "authGuard", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		got := bearerToken(r.Header.Get("Authorization"))
 		// 常量时间比较，避免时序侧信道泄漏 token 前缀。
 		if subtle.ConstantTimeCompare([]byte(got), want) != 1 {
 			writeError(w, log, http.StatusUnauthorized, domain.CodeLocHTTPUnauthorized, "Bearer token 缺失或不匹配")
@@ -252,6 +290,17 @@ func authGuard(cfg *config.Config, log *slog.Logger, next http.Handler) http.Han
 		}
 		next.ServeHTTP(w, r)
 	})}
+}
+
+// bearerToken 取出 Authorization 头里的 token，缺失或不匹配时返回空串。
+// RFC 7235 的 auth-scheme 大小写不敏感：只认 "Bearer " 会让写 "bearer " 的
+// 合法客户端吃 401，而 401 的文案不会告诉它是大小写问题。
+func bearerToken(header string) string {
+	const prefix = "bearer "
+	if len(header) >= len(prefix) && strings.EqualFold(header[:len(prefix)], prefix) {
+		return header[len(prefix):]
+	}
+	return ""
 }
 
 func bodyLimit(cfg *config.Config, next http.Handler) http.Handler {

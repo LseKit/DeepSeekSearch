@@ -75,10 +75,11 @@ type nopCloseWriter struct{ io.Writer }
 func (nopCloseWriter) Close() error { return nil }
 
 // isStdoutDest 与 internal/config 的启动期检查同口径：
-// 配置没有独立的 dest 键，log.dir 是唯一目的地，"-" 与 /dev/stdout 是常见别名。
+// 配置没有独立的 dest 键，log.dir 是唯一目的地，"-" 与 /dev/stdout 是常见别名，
+// /dev/fd/1 与 /proc/self/fd/1 是同一个 fd 的另两种写法（漏了它们，加固就被绕过）。
 func isStdoutDest(dir string) bool {
 	switch strings.ToLower(strings.TrimSpace(dir)) {
-	case "stdout", "-", "/dev/stdout":
+	case "stdout", "-", "/dev/stdout", "/dev/fd/1", "/proc/self/fd/1":
 		return true
 	default:
 		return false
