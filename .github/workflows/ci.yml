@@ -23,19 +23,23 @@ permissions:
   contents: read
 
 env:
-  # 🔴 MUST pin **完整补丁版本**（`1.27.2`），MUST NOT 写 `1.27`。
+  # 🔴 MUST pin **完整补丁版本**（`1.27.3`），MUST NOT 写 `1.27`。
   #    写 `1.27` 时 setup-go 每次解析到当时的最新补丁 ⇒ 同一个 commit 在不同时间
   #    构建出的二进制 `--version` 里 go 段不同（1.27.2 / 1.27.3 …），发布产物不可复现。
-  #    当前取值依据：NUC（部署目标）为 go1.27.2，三台机器里最新；升补丁版本 = 一次显式提交。
-  GO_VERSION: "1.27.2"
+  #    🔴 取值 MUST 与 go.mod 的 `toolchain` 行逐字相同：go.mod 那行才是构建产物的真源，
+  #    这里只是让 setup-go 少下载一次。两处不一致时，二进制里 go 段以 toolchain 行为准。
+  #    升补丁版本 = 一次显式提交（同时改这两处 + 17 号契约的样例）。
+  #    本次 1.27.2 → 1.27.3 的依据：GO-2026-6809（crypto/x509 未吊销被攻陷的中间证书），
+  #    影响本项目唯一的出站 TLS 链路。
+  #    ⚠️ 本机若设了 GOTOOLCHAIN=local，go.mod 的 toolchain 行会被**静默忽略**，
+  #    构建出的仍是旧补丁版本 —— 发布前 MUST 用 `-version` 核对 go 段。
+  GO_VERSION: "1.27.3"
   # 🔴 工具版本 MUST pin 到**具体版本号**，MUST NOT 用浮动版本。三重后果：
-  #    ① Scorecard 的 Pinned-Dependencies 大面积扣分，本任务 §8 那句「Supply-Chain
-  #       都能拿到分」就不成立；
-  #    ② golangci-lint 的 latest 将来出 v3 时，v2 的配置格式会**直接红 CI**
-  #       （Task-13 的 CONTRIBUTING 自己就警告过「v1 配置格式已废弃」这类事故）；
+  #    ① Scorecard 的 Pinned-Dependencies 大面积扣分，供应链评分下降；
+  #    ② golangci-lint 的 latest 将来出 v3 时，v2 的配置格式会**直接红 CI**；
   #    ③ 同一个 commit 两次 CI 结果可能不一致 ⇒ 无法复现。
   #    🔴 **但版本号不再写在这里** —— 四个 Go 工具（gofumpt / golangci-lint / gocyclo /
-  #    govulncheck）已改为 `go.mod` 的 `tool` 指令管理（见 Task-01 A-01 §3 第 2.1 条），
+  #    govulncheck）已改为 `go.mod` 的 `tool` 指令管理，
   #    step 里用 `go tool <name>` 调用，版本由 go.mod 的 require 行决定。
   #    **为什么改**：`go install pkg@version` 的版本号 dependabot **管不到**（它只看
   #    go.mod / package.json 这类清单文件），原设计等于承诺「按月人工跟进四个版本号」——
@@ -46,7 +50,7 @@ env:
   #    写入 go.mod，MUST NOT 手写 tool 块而不同步 require/go.sum。
   # 🔴 第三方 action MUST pin 到 **40 位 commit digest**（tag 引用不算 pin）。
   #    本文件的 digest 由 .github/dependabot.yml 的 github-actions ecosystem 跟进更新；
-  #    新增 action MUST 现取 digest（方法见 Task-14 §5.11），MUST NOT 抄别处的串。
+  #    新增 action MUST 现取 digest，MUST NOT 抄别处的串。
 
 jobs:
   fmt:
@@ -95,13 +99,9 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
       - name: 下载工具链
         run: go mod download
-      # 🔴 两参签名：CheckSize.sh <代码根> <文档根>。CI 里文档根是 docs（同步产物），
-      #    不是 Doc。只传一个参数时文档根退化成默认的 Doc ⇒ 豁免台账加载不到 ⇒
-      #    已登记的 internal/domain/errors.go（720 行）会直接触发 F-S1 FAIL，job 恒红。
-      # 🔴 CheckSize.sh 内部调 gocyclo 判 F-S3；改用 go tool 后，脚本 MUST 用
-      #    `go tool gocyclo` 或依赖 PATH 里有 gocyclo。裁决：脚本里写成
-      #    `GOCYCLO="${GOCYCLO:-gocyclo}"`，CI 这个 step 传 `GOCYCLO="go tool gocyclo"`，
-      #    本地开发装了二进制时走默认值 —— 两边都不硬编码。
+      # 两参签名：CheckSize.sh <代码根> <文档根>，文档根是仓库内 docs/。
+      # CheckSize.sh 内部调 gocyclo 判 F-S3；CI 用 go tool 调用，
+      # 本地开发装了二进制时走默认值 —— 两边都不硬编码。
       - run: GOCYCLO="go tool gocyclo" bash Scripts/CheckSize.sh . docs
 
   test:
@@ -131,9 +131,8 @@ jobs:
           total="$(go tool cover -func=coverage.out | awk '/^total:/ {print substr($3,1,length($3)-1)}')"
           echo "总覆盖率: ${total}%"
           awk -v t="$total" 'BEGIN { if (t+0 < 65) { printf "覆盖率不足：%.1f%% < 65%%\n", t; exit 1 } }'
-      # 🔴 逐包门槛。原来只查 domain/config/resilience 三个 80%，而 Task-08 与 Task-09
-      #    都承诺 internal/tools ≥70% ⇒ 承诺没有牙齿（21-测试规范 §三 也是这个口径）。
-      #    阈值写在循环的第二个字段里，加一个包就加一行，MUST NOT 只改文档不改这里。
+      # 🔴 逐包门槛。阈值写在循环的第二个字段里，加一个包就加一行，
+      #    MUST NOT 只改说明不改这里。
       - name: 逐包覆盖率门槛
         run: |
           set -euo pipefail
@@ -148,24 +147,20 @@ jobs:
             awk -v t="$v" -v w="$want" -v p="$pkg" \
               'BEGIN { if (t+0 < w+0) { printf "%s 覆盖率不足：%.1f%% < %s%%\n", p, t, w; exit 1 } }'
           done
-      # ⚠️ 逐包阈值判定 MUST 最终收敛到 `make cover-check`（归 Task-01 交付）。
-      #    `make cover` 只跑 `go tool cover -func | tail -1` 打印总行，**无法**据此判定
-      #    逐包门槛 —— 这正是 Contract/17-版本与发布契约 §七 第 10 项点名的问题。
+      # ⚠️ 逐包阈值判定 MUST 最终收敛到 `make cover-check`。
+      #    `make cover` 只打印总行，**无法**据此判定逐包门槛。
 
   drift:
     name: 文档漂移与发布文件
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      # CI 里只有 docs/（同步产物），没有 Doc/。所以把 docs 当文档根，代码根为 .
-      # 🔴 两参签名：CheckDocDrift.sh <文档根> <代码根>（Engineering/22-架构守护规则 §五）
+      # 两参签名：CheckDocDrift.sh <文档根> <代码根>，文档根是仓库内 docs/。
       - run: bash Scripts/CheckDocDrift.sh docs .
-      # 🔴 C13 新增：这两个脚本都是秒级，此前只在发版那一刻跑 ⇒
-      #    AGENTS.md 漂移、docs/ 忘同步、A/B 级文件被误删，全都要等到打 tag 才暴露。
+      # 这两个脚本都是秒级，避免 A/B 级文件被误删直到打 tag 才暴露。
       - run: bash Scripts/CheckRepoFiles.sh .
-      # CI 语境没有 Doc/，脚本会明确打印 [SKIP] 并退化为「docs/ 存在且非空」（真检查，
-      # 能抓住「忘了提交 docs/」）；真正的比对由 Release.sh 第 18 项在发版机执行。
-      - run: bash Scripts/SyncDocs.sh --check ../Doc .
+      # docs/ 是仓库内唯一文档根；缺失或为空时直接失败。
+      - run: test -n "$(find docs -name '*.md' -print -quit)"
 
   cross-build:
     name: 跨平台编译矩阵
@@ -222,7 +217,7 @@ jobs:
         run: |
           $env:CGO_ENABLED = "0"
           go build -trimpath -o dss.exe ./cmd/deepseeksearch
-      - name: --version（不读配置，Contract/17 §3.1 V3）
+      - name: --version（不读配置）
         shell: pwsh
         run: |
           ./dss.exe --version
@@ -232,7 +227,7 @@ jobs:
         run: |
           # Windows runner **没有系统 IANA tzdata**。若 cmd 包漏了 import _ "time/tzdata"，
           # 装配第 3 步 time.LoadLocation("Asia/Shanghai") 会失败并 exit 1
-          # （Contract/11-接口契约 §七、Contract/10-包依赖矩阵 §2.9 的 P0 条目）。
+          # （Windows 无系统 tzdata，LoadLocation 会直接失败）。
           # --version 在第 2 步就返回，**测不到** tzdata，所以 MUST 走到 -check。
           # 用假 Key：-check 不发起任何上游请求（不计费），但启动检查第 3 条要求 Key 非空。
           # -env 指向仓库内的空 .env：默认 Config/.env 在 CI checkout 里不存在，

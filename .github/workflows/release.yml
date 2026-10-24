@@ -3,9 +3,9 @@
 #   🔴 SBOM 只有一份，不是「每平台一份」：anchore/sbom-action 扫的是**依赖图**
 #     （go.mod / go.sum），而四个平台产物的依赖图完全相同 —— CGO_ENABLED=0 +
 #     纯 Go SQLite 驱动 ⇒ 没有任何平台专属依赖。原注释描述了一个本 workflow
-#     根本没实现的行为（见 Contract/18-仓库文件契约 §4.2）。
+#     根本没实现的行为。
 # 二进制只进 Release 附件，MUST NOT 提交进 git。
-# 🔴 两道闸门（Contract/18-仓库文件契约 §4.2）：
+# 🔴 两道闸门：
 #   ① verify-tag —— workflow_dispatch 可以手输任意 tag，而 softprops/action-gh-release
 #      对**不存在**的 tag 会自动创建 tag + release ⇒ 不校验就能凭空发一个版本；
 #   ② needs: ci —— tag 推送不触发 ci.yml 的 push.branches 规则，CI 根本不会跑
@@ -27,7 +27,7 @@ permissions:
 
 env:
   # 🔴 与 ci.yml 的 GO_VERSION 逐字相同（完整补丁版本，理由见 ci.yml 顶部注释）。
-  GO_VERSION: "1.27.2"
+  GO_VERSION: "1.27.3"
 
 jobs:
   # ---------------------------------------------------------------- 闸门 ①
@@ -47,7 +47,7 @@ jobs:
             echo "❌ tag ${tag} 不存在，拒绝发布。"
             echo "   softprops/action-gh-release 对不存在的 tag 会自动创建 tag + release，"
             echo "   那等于绕过 Release.sh 的 21 项检查与整个 CI。"
-            echo "   发版 MUST 先按 Contract/17-版本与发布契约 §五 打附注 tag 并推送。"
+            echo "   发版 MUST 先打附注 tag 并推送。"
             exit 1
           fi
           # 附注 tag 的 object 类型是 tag；轻量 tag 是 commit（Release.sh 第 20 项要求附注）
@@ -116,7 +116,7 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: ${{ github.event.inputs.tag || github.ref_name }}
-          generate_release_notes: true     # 分组规则见 .github/release.yml 与 Contract/18 §4.6
+          generate_release_notes: true     # 分组规则见 .github/release.yml
           files: |
             dist/DeepSeekSearch_*
             dist/SHA256SUMS

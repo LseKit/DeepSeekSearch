@@ -2,6 +2,8 @@ module github.com/LseKit/DeepSeekSearch
 
 go 1.27
 
+toolchain go1.27.3
+
 tool (
 	github.com/fzipp/gocyclo/cmd/gocyclo
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
