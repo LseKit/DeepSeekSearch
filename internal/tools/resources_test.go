@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/health"
 )
 
 func resourceDeps(t *testing.T) Deps {
@@ -24,7 +25,7 @@ func resourceDeps(t *testing.T) Deps {
 		return domain.SearchResponse{Results: fixtureResults(5)}, nil
 	}}
 	deps := healthyDeps(t, client)
-	deps.Usage = NewUsageTracker(deps.Clock)
+	deps.Usage = health.NewUsageTracker(deps.Clock)
 	return deps
 }
 
@@ -44,13 +45,32 @@ func readResource(t *testing.T, deps *Deps, uri string) []byte {
 	return nil
 }
 
-func decodeUsage(t *testing.T, raw []byte) usageSnapshot {
+// usageDoc 是 ds://usage 的对外形状，在测试里本地声明。
+// 不引用统计器的内部类型：资源输出是契约，实现结构改名不该让这条测试失效。
+type usageDoc struct {
+	Tools map[string]struct {
+		Calls      int64  `json:"calls"`
+		Billed     int64  `json:"billed"`
+		CacheHits  int64  `json:"cache_hits"`
+		Errors     int64  `json:"errors"`
+		LastCallAt string `json:"last_call_at"`
+	} `json:"tools"`
+	Hourly []struct {
+		Hour      string `json:"hour"`
+		Calls     int64  `json:"calls"`
+		Billed    int64  `json:"billed"`
+		CacheHits int64  `json:"cache_hits"`
+		Errors    int64  `json:"errors"`
+	} `json:"hourly"`
+}
+
+func decodeUsage(t *testing.T, raw []byte) usageDoc {
 	t.Helper()
-	var snapshot usageSnapshot
-	if err := json.Unmarshal(raw, &snapshot); err != nil {
+	var doc usageDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("解析 usage = %v", err)
 	}
-	return snapshot
+	return doc
 }
 
 func TestResources(t *testing.T) {
@@ -233,30 +253,6 @@ func TestResources(t *testing.T) {
 			}
 		}
 	})
-}
-
-func TestNewUsageTracker(t *testing.T) {
-	t.Parallel()
-
-	tracker := NewUsageTracker(nil)
-	snapshot := tracker.snapshot()
-	if len(snapshot.Tools) != 5 {
-		t.Fatalf("tools = %d", len(snapshot.Tools))
-	}
-	tracker.Record("unknown", true, false, nil)
-	if snapshot = tracker.snapshot(); snapshot.Tools["ds_search"].Calls != 0 {
-		t.Fatal("未知工具不应被记录")
-	}
-	tracker.Record("ds_search", true, false, nil)
-	tracker.Record("ds_search", false, true, nil)
-	snapshot = tracker.snapshot()
-	stat := snapshot.Tools["ds_search"]
-	if stat.Calls != 2 || stat.Billed != 1 || stat.CacheHits != 1 || stat.Errors != 0 {
-		t.Fatalf("stat = %+v", stat)
-	}
-	if len(snapshot.Hourly) != 1 {
-		t.Fatalf("hourly = %d, want 1", len(snapshot.Hourly))
-	}
 }
 
 func TestRegisterResources(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/health"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience/budget"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience/cache"
@@ -48,18 +49,31 @@ func buildDeps(cfg *config.Config, tz *time.Location, clk resilience.Clock, logg
 		return tools.Deps{}, nil, fmt.Errorf("构造限流器: %w", err)
 	}
 
+	searchRC := rc
+	searchRC.MaxAttempts = cfg.Timeout.Search.MaxAttempts
+	fetchRC := rc
+	fetchRC.MaxAttempts = cfg.Timeout.Fetch.MaxAttempts
+	searchRetry := retry.NewRetry(searchRC, clk, nil)
+	fetchRetry := retry.NewRetry(fetchRC, clk, nil)
+	searchClient := newClient(deepseekConfig(cfg, build, cfg.Timeout.Search.PerAttemptMs))
+	fetchClient := newClient(deepseekConfig(cfg, build, cfg.Timeout.Fetch.PerAttemptMs))
+
 	deps := tools.Deps{
 		Cfg:          *cfg,
-		Client:       newClient(deepseekConfig(cfg, build)),
+		Client:       searchClient,
+		SearchClient: searchClient,
+		FetchClient:  fetchClient,
 		Limiter:      limiter,
-		Retry:        retry.NewRetry(rc, clk, nil),
+		Retry:        searchRetry,
+		SearchRetry:  searchRetry,
+		FetchRetry:   fetchRetry,
 		Budget:       budget.NewBudget(rc, clk),
 		Cache:        cacheStore,
 		Singleflight: cache.NewSingleflight(cacheStore, clk),
 		Circuit:      circuit.NewCircuit(rc, clk),
 		Clock:        clk,
 		StartedAt:    clk.Now(),
-		Usage:        tools.NewUsageTracker(clk),
+		Usage:        health.NewUsageTracker(clk),
 		Build:        build,
 		Logger:       logger,
 	}
@@ -74,10 +88,6 @@ func limiterSpecs(cfg *config.Config) map[string]ratelimit.BucketSpec {
 }
 
 func resilienceConfig(cfg *config.Config, tz *time.Location, clk resilience.Clock, logger *slog.Logger) resilience.Config {
-	// Retry/Client 各只有一个 MaxAttempts/PerAttempt，而配置按工具分开：
-	// 取两者的 max。search 的总预算（67s）会先于 45s 的单次上限生效，
-	// 因此取 max 不会让 search 超出自己的 total_timeout。
-	maxAttempts := max(cfg.Timeout.Search.MaxAttempts, cfg.Timeout.Fetch.MaxAttempts)
 	threshold := cfg.Circuit.FailThreshold
 	if !cfg.Circuit.Enabled {
 		threshold = 1 << 30 // 不可达阈值 = 关闭；Resilience 配置没有单独的 Enabled 字段
@@ -88,7 +98,7 @@ func resilienceConfig(cfg *config.Config, tz *time.Location, clk resilience.Cloc
 	}
 	return resilience.Config{
 		RetryEnabled:          cfg.Retry.Enabled,
-		MaxAttempts:           maxAttempts,
+		MaxAttempts:           cfg.Timeout.Search.MaxAttempts,
 		JitterMode:            cfg.Retry.JitterMode,
 		FixedMs:               cfg.Retry.FixedMs,
 		SpreadMs:              cfg.Retry.SpreadMs,
@@ -115,13 +125,12 @@ func resilienceConfig(cfg *config.Config, tz *time.Location, clk resilience.Cloc
 	}
 }
 
-func deepseekConfig(cfg *config.Config, build domain.BuildInfo) deepseek.Config {
-	perAttempt := max(cfg.Timeout.Search.PerAttemptMs, cfg.Timeout.Fetch.PerAttemptMs)
+func deepseekConfig(cfg *config.Config, build domain.BuildInfo, perAttemptMs int) deepseek.Config {
 	return deepseek.Config{
 		BaseUrl:          cfg.Upstream.BaseURL,
 		ApiKey:           cfg.ApiKey,
 		UserAgent:        cfg.Upstream.UserAgent,
-		PerAttempt:       time.Duration(perAttempt) * time.Millisecond,
+		PerAttempt:       time.Duration(perAttemptMs) * time.Millisecond,
 		Dial:             time.Duration(cfg.Timeout.DialMs) * time.Millisecond,
 		TLSHandshake:     time.Duration(cfg.Timeout.TLSHandshakeMs) * time.Millisecond,
 		ResponseHeader:   time.Duration(cfg.Timeout.ResponseHeaderMs) * time.Millisecond,
