@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +22,6 @@ import (
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/mcputil"
-	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 	"github.com/LseKit/DeepSeekSearch/internal/toolschema"
 )
 
@@ -36,7 +36,7 @@ type researchTool struct{}
 func (t *researchTool) Name() string { return researchToolName }
 
 // Register 把 ds_research 注册到 server。
-func (t *researchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
+func (t *researchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名与 MCP 工具注册接口保持一致
 	srv.AddTool(researchDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return handleResearch(ctx, &deps, req), nil
 	})
@@ -58,7 +58,7 @@ type extractTool struct{}
 func (t *extractTool) Name() string { return extractToolName }
 
 // Register 把 ds_extract 注册到 server。
-func (t *extractTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
+func (t *extractTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名与 MCP 工具注册接口保持一致
 	srv.AddTool(extractDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return handleExtract(ctx, &deps, req), nil
 	})
@@ -101,9 +101,6 @@ type researchOutput struct {
 // handleResearch 复用 ds_search / ds_fetch 的完整管线（缓存、限流、重试、预算）。
 // 不直接调 deepseek.Client：那会绕开缓存与限流，组合工具就会成为计费放大器。
 func handleResearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp.CallToolResult {
-	if deps.Clock == nil {
-		deps.Clock = resilience.SystemClock()
-	}
 	started := deps.Clock.Now()
 	logger := deps.Logger.With("call_id", domain.NewCallID(), "tool", researchToolName)
 	logger.Info("call.begin")
@@ -120,9 +117,13 @@ func handleResearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *
 		return finishTool(deps, logger, started, researchToolName, searchRes, err)
 	}
 	sources, warnings := runResearchFetch(ctx, deps, items, *in.PerSourceChars)
-	bundle, truncated := buildBundle(sources)
-	if truncated {
-		warnings = append(warnings, fmt.Sprintf("bundle 因 %d rune 预算截断，其余来源见 sources[]", 32000))
+	bundle, omitted := buildBundle(sources)
+	if omitted > 0 {
+		// sources[] 里的 Content 不参与序列化，MUST NOT 承诺「其余来源见 sources[]」——
+		// 那是句拿不到东西的空话。
+		warnings = append(warnings, fmt.Sprintf(
+			"bundle 超出 %d rune 预算，%d 个来源未纳入；按 sources[].url 单独调 ds_fetch 取正文",
+			bundleBudget, omitted))
 	}
 	raw, marshalErr := json.Marshal(researchOutput{Question: in.Question, Sources: sources, Bundle: bundle, Warnings: warnings})
 	if marshalErr != nil {
@@ -185,19 +186,47 @@ func runResearchFetch(ctx context.Context, deps *Deps, items []searchOutputItem,
 	return sources, warnings
 }
 
-func buildBundle(sources []researchSource) (string, bool) {
+// bundleBudget 是 bundle 的总 rune 预算。
+const bundleBudget = 32000
+
+// buildBundle 以「整条来源」为单位控制预算，返回因预算被略过的来源数。
+// MUST NOT 拼完再按 rune 截断：截断点会落在 <untrusted_content> 包裹中间，
+// 留下未闭合的标签，反而削弱「这是数据不是指令」的隔离。
+func buildBundle(sources []researchSource) (bundle string, omitted int) {
 	var b strings.Builder
-	for _, src := range sources {
-		if src.Ok {
-			fmt.Fprintf(&b, "## [%d] %s\n%s\n\n%s\n\n", src.Index, src.Title, src.URL, src.Content)
+	used := 0
+	for i := range sources {
+		src := &sources[i]
+		if !src.Ok {
+			continue
 		}
+		block := fmt.Sprintf("## [%d] %s\n%s\n\n%s\n\n", src.Index, bundleTitle(src), src.URL, src.Content)
+		n := utf8.RuneCountInString(block)
+		if used > 0 && used+n > bundleBudget {
+			omitted++
+			continue
+		}
+		if n > bundleBudget {
+			// 单条就超预算时只能截这一条；TruncateUntrusted 保住包裹标签的闭合。
+			block = domain.TruncateUntrusted(block, bundleBudget)
+			n = utf8.RuneCountInString(block)
+		}
+		b.WriteString(block)
+		used += n
 	}
-	out := b.String()
-	if utf8.RuneCountInString(out) > 32000 {
-		sliced, _ := domain.SliceByRune(out, 0, 32000)
-		return sliced, true
+	return b.String(), omitted
+}
+
+// bundleTitle 给空标题兜底。上游对 raw 文本（例如 ?m=text 的源码）常返回空 title，
+// 直接拼会得到「## [2] 」这种带尾随空格的空标题 —— 编号材料却看不出是谁。
+func bundleTitle(src *researchSource) string {
+	if title := strings.TrimSpace(src.Title); title != "" {
+		return title
 	}
-	return out, false
+	if u, err := url.Parse(src.URL); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return "（无标题）"
 }
 
 func validateResearch(in *researchInput) error {
@@ -242,9 +271,6 @@ type extractOutput struct {
 
 // handleExtract 与 ds_research 同理：逐条走 ds_fetch 的完整管线。
 func handleExtract(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp.CallToolResult {
-	if deps.Clock == nil {
-		deps.Clock = resilience.SystemClock()
-	}
 	started := deps.Clock.Now()
 	logger := deps.Logger.With("call_id", domain.NewCallID(), "tool", extractToolName)
 	logger.Info("call.begin")
@@ -314,22 +340,32 @@ func validateExtract(in *extractInput) error {
 }
 
 // contentOrOutline 取正文；大文档 fetch 返回 outline（content 为空）时降级为目录文本。
+// 目录 MUST 带上每节的 preview：无标题的纯文本/源码走固定分块，只有「[c0]（8000 字）」
+// 时调用方给了 per_source_chars 预算却拿到零正文，等于没给材料。
 func contentOrOutline(out *fetchOutput) string {
 	if out.Content != "" {
 		return out.Content
 	}
 	var b strings.Builder
-	b.WriteString("（大文档：以下为目录）\n")
+	b.WriteString("（大文档：以下为目录与每节摘录）\n")
 	for _, sec := range out.Sections {
-		fmt.Fprintf(&b, "- [%s] %s（%d 字）\n", sec.ID, sec.Title, sec.Chars)
+		if sec.Title != "" {
+			fmt.Fprintf(&b, "- [%s] %s（%d 字）\n", sec.ID, sec.Title, sec.Chars)
+		} else {
+			fmt.Fprintf(&b, "- [%s]（%d 字）\n", sec.ID, sec.Chars)
+		}
+		if sec.Preview != "" {
+			fmt.Fprintf(&b, "%s\n", sec.Preview)
+		}
 	}
 	return b.String()
 }
 
 // runFetchSub 走 ds_fetch 的完整管线（缓存/限流/重试/反转义），返回解析输出或错误体。
-func runFetchSub(ctx context.Context, deps *Deps, url string, maxChars int) (fetchOutput, *domain.ErrorPayload) {
+// 形参叫 rawURL 而不是 url：本文件要用 net/url 给空标题兜底，同名会遮住包名。
+func runFetchSub(ctx context.Context, deps *Deps, rawURL string, maxChars int) (fetchOutput, *domain.ErrorPayload) {
 	limit := maxChars
-	req, err := mcputil.Request(fetchInput{URL: &url, MaxChars: &limit})
+	req, err := mcputil.Request(fetchInput{URL: &rawURL, MaxChars: &limit})
 	if err != nil {
 		return fetchOutput{}, &domain.ErrorPayload{Code: domain.CodeValInvalidParam, Name: "VAL_INVALID_PARAM", Message: err.Error()}
 	}

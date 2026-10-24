@@ -19,6 +19,7 @@ import (
 
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/mcputil"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 	"github.com/LseKit/DeepSeekSearch/internal/toolschema"
 )
@@ -42,9 +43,6 @@ type searchHandler struct {
 // handleSearch 是 ds_search 的完整编排。
 // 顺序不能改：校验在任何 IO 之前；限流在缓存查询之前（缓存命中也过限流）。
 func handleSearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp.CallToolResult {
-	if deps.Clock == nil {
-		deps.Clock = resilience.SystemClock()
-	}
 	h := &searchHandler{deps: deps, started: deps.Clock.Now()}
 	h.logger = deps.Logger.With("call_id", domain.NewCallID(), "tool", searchToolName)
 	h.logger.Info("call.begin")
@@ -81,11 +79,15 @@ func handleSearch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mc
 	if res, done := h.replayCache(totalCtx, ctx, key, ttl); done {
 		return res
 	}
+	if err := checkBudget(h.deps.Budget, "search"); err != nil {
+		mapped := h.mapInterrupted(ctx, totalCtx, err)
+		return h.finish(errorResult(mapped, searchToolName), false, mapped)
+	}
 	return h.runUpstream(totalCtx, ctx, key, ttl, !h.params.NoCache)
 }
 
 // replayCache 命中则直接渲染。no_cache 要求真实调用上游：既不读缓存，
-// 也不能搭别人的 singleflight，否则「必定计费」在并发下不成立（DEBT-003）。
+// 也不能搭别人的 singleflight，否则「必定计费」在并发下不成立。
 func (h *searchHandler) replayCache(totalCtx, parentCtx context.Context, key string, ttl time.Duration) (*mcp.CallToolResult, bool) {
 	if ttl <= 0 || h.params.NoCache {
 		return nil, false
@@ -100,6 +102,10 @@ func (h *searchHandler) replayCache(totalCtx, parentCtx context.Context, key str
 	env, ok := decodeSearchEnvelope(raw)
 	if !ok {
 		h.logCacheDegraded("decode", key, fmt.Errorf("缓存内容不是合法的搜索结果信封"))
+		if err := checkBudget(h.deps.Budget, "search"); err != nil {
+			mapped := h.mapInterrupted(parentCtx, totalCtx, err)
+			return h.finish(errorResult(mapped, searchToolName), false, mapped), true
+		}
 		return h.runUpstream(totalCtx, parentCtx, key, ttl, false), true
 	}
 	return h.renderAndFinish(env, true), true
@@ -171,7 +177,7 @@ func (h *searchHandler) upstream(ctx context.Context, req *domain.SearchRequest)
 		}
 		h.logger.Info("call.upstream", "attempt", attempt)
 		attemptStart := h.deps.Clock.Now()
-		resp, err := h.deps.Client.Search(domain.ContextWithAttempt(ctx, attempt), *req)
+		resp, err := h.deps.clientFor("search").Search(domain.ContextWithAttempt(ctx, attempt), *req)
 		ms := h.deps.Clock.Now().Sub(attemptStart).Milliseconds()
 		args := []any{"attempt", attempt, "ms", ms, "ok", err == nil}
 		if err != nil {
@@ -184,6 +190,7 @@ func (h *searchHandler) upstream(ctx context.Context, req *domain.SearchRequest)
 		h.logger.Info("call.upstream.done", args...)
 		if err == nil {
 			h.recordCircuit(nil)
+			recordBudget(h.deps.Budget, "search")
 			return resp, nil
 		}
 		// ctx 是 fn 实际收到的 context；singleflight 另建的 totalCtx timer 有微秒级竞争，会偶发误判 2998。
@@ -210,17 +217,19 @@ func (h *searchHandler) upstream(ctx context.Context, req *domain.SearchRequest)
 }
 
 func (h *searchHandler) shouldRetry(err error, attempt int) (bool, resilience.Reason) {
-	if h.deps.Retry == nil {
+	r := h.deps.retryFor("search")
+	if r == nil {
 		return false, resilience.ReasonDisabled
 	}
-	return h.deps.Retry.Should(err, attempt)
+	return r.Should(err, attempt)
 }
 
 func (h *searchHandler) retryDelay(attempt int) time.Duration {
-	if h.deps.Retry == nil {
+	r := h.deps.retryFor("search")
+	if r == nil {
 		return 0
 	}
-	return h.deps.Retry.Delay(attempt)
+	return r.Delay(attempt)
 }
 
 func (h *searchHandler) waitRetry(ctx context.Context, delay time.Duration) bool {
@@ -348,7 +357,8 @@ func keyHash(key string) string {
 	return hex.EncodeToString(sum[:6])
 }
 
-// withExchangeHook 在开启报文日志时把本次调用的收集器挂到 ctx（DEBT-009）。
+// withExchangeHook 在开启报文日志时把本次调用的收集器挂到 ctx。
+// 响应体 MUST 脱敏：上游 401 会回显 API Key，这是它唯一可能落盘的路径。
 func (h *searchHandler) withExchangeHook(ctx context.Context) context.Context {
 	limitKB := h.deps.Cfg.Log.MaxBodyLogKb
 	if limitKB <= 0 {
@@ -357,7 +367,8 @@ func (h *searchHandler) withExchangeHook(ctx context.Context) context.Context {
 	limitBytes := limitKB * 1024
 	return deepseek.WithExchangeHook(ctx, func(_ context.Context, req, resp []byte) {
 		h.reqBody = domain.ClipBytes(req, limitBytes)
-		h.respBody = domain.ClipBytes(resp, limitBytes)
+		// 先脱敏再截断：截断可能把 sk- Key 切成两半，碎片既不匹配脱敏正则也能被拼回去。
+		h.respBody = domain.ClipBytes([]byte(domain.RedactSecrets(string(resp))), limitBytes)
 	})
 }
 
@@ -366,16 +377,18 @@ func parseSearchRequest(req *mcp.CallToolRequest) (*searchInput, error) {
 		return nil, invalid("arguments", "缺少请求参数")
 	}
 	var in searchInput
+	// 空 arguments 不当解析错误：交给下游按「query 为空」报 1000，指出的字段更准。
+	// 非空时走 mcputil.ParseInput，未知键（拼错的参数名）MUST 被拒而不是静默忽略。
 	if len(req.Params.Arguments) > 0 {
-		if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
-			return nil, invalid("arguments", "无法解析 JSON 参数")
+		if err := mcputil.ParseInput(req, &in); err != nil {
+			return nil, fmt.Errorf("parse arguments: %w", err)
 		}
 	}
 	return &in, nil
 }
 
 // searchDescription 只放「模型不知道就会做错」的规则。
-// 错误码表放 Resource ds://error-codes；41 个码塞进来约 1500 token，
+// 错误码表放 Resource ds://error-codes；42 个码塞进来约 1500 token，
 // 每次 tools/list 都要付。
 const searchDescription = `搜索网页并返回排序后的结果列表。上游已按 rerank_score 降序，不要自己重排。
 
@@ -396,7 +409,7 @@ type searchTool struct{}
 func (t *searchTool) Name() string { return "ds_search" }
 
 // Register 把 ds_search 的 schema、annotations 与 handler 注册到 server。
-func (t *searchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
+func (t *searchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名与 MCP 工具注册接口保持一致
 	srv.AddTool(searchToolDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return handleSearch(ctx, &deps, req), nil
 	})

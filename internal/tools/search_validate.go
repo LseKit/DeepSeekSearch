@@ -73,7 +73,7 @@ func validateSearch(in *searchInput, cfg *config.Config) (searchParams, error) {
 		Query:        in.Query,
 		Count:        defaultCount(cfg),
 		Detail:       defaultDetail(cfg),
-		MaxPerDomain: 3,
+		MaxPerDomain: cfg.Dedupe.MaxPerDomain,
 		NoCache:      noCacheRequested(in.NoCache),
 	}
 	if err := validateNoNewlines(in); err != nil {
@@ -262,7 +262,23 @@ func applyDates(params *searchParams, in *searchInput) error {
 		}
 		*date.out = *date.in
 	}
+	// after 晚于 before 时上游几乎必然返回 0 条，而这次调用照样计费。
+	// 只记 warning 不拒绝：「区间反了」也可能是调用方故意的（就想确认这段时间没内容），
+	// 直接拒绝会把这种用法堵死，而 warning 足以让下一次调用改对。
+	if params.After != "" && params.Before != "" &&
+		dateKey(params.After) > dateKey(params.Before) {
+		params.Warnings = append(params.Warnings, fmt.Sprintf(
+			"after=%s 晚于 before=%s，上游几乎必然返回 0 条，且本次调用仍会计费", params.After, params.Before))
+	}
 	return nil
+}
+
+// dateKey 把裸年份补成 YYYY-01-01，让两种格式能直接按字典序比先后。
+func dateKey(value string) string {
+	if len(value) == 4 {
+		return value + "-01-01"
+	}
+	return value
 }
 
 func applyExactPhrase(params *searchParams, value *string) error {
@@ -354,13 +370,18 @@ func applyMinFilters(params *searchParams, in *searchInput) error {
 	return nil
 }
 
+// applyDomainQuota 处理每域名配额。
+// 默认值来自配置（`0` = 不限制），范围校验只在调用方显式传参时做：
+// 工具 schema 承诺的合法域是 1~10，配置承诺的是 ≥0，两者不同，
+// 用同一个区间校验会把「配置成 0 表示不限」判成非法。
 func applyDomainQuota(params *searchParams, in *searchInput) error {
-	if in.MaxPerDomain != nil {
-		params.MaxPerDomain = *in.MaxPerDomain
+	if in.MaxPerDomain == nil {
+		return nil
 	}
-	if params.MaxPerDomain < 1 || params.MaxPerDomain > 10 {
+	if *in.MaxPerDomain < 1 || *in.MaxPerDomain > 10 {
 		return invalid("max_per_domain", "必须在 1~10 之间")
 	}
+	params.MaxPerDomain = *in.MaxPerDomain
 	return nil
 }
 

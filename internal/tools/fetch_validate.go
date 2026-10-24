@@ -8,15 +8,11 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
@@ -29,23 +25,6 @@ const (
 	fetchMaxCharsCap  = 200000
 	defaultFetchChars = 32000
 )
-
-// blockedNets 是 SSRF 黑名单。定位是纵深防御：抓取由上游执行，我方不直连目标 URL，
-// 但 base_url 改成自建代理时它就是第一道防线。
-var blockedNets = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),
-	netip.MustParsePrefix("10.0.0.0/8"),
-	netip.MustParsePrefix("127.0.0.0/8"),
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("172.16.0.0/12"),
-	netip.MustParsePrefix("192.168.0.0/16"),
-	netip.MustParsePrefix("::1/128"),
-	netip.MustParsePrefix("fc00::/7"),
-	netip.MustParsePrefix("fe80::/10"),
-}
-
-var blockedSuffixes = []string{".internal", ".local", ".localhost"}
 
 type fetchParams struct {
 	URL      string
@@ -139,7 +118,12 @@ func validateFetchURL(raw string, cfg *config.Config) error {
 		return fmt.Errorf("url host: %w",
 			domain.NewValidationError(domain.CodeValURLScheme, "url", "URL 必须包含 host"))
 	}
-	if rule, blocked := ssrfRule(host, cfg); blocked {
+	// 端口越界本地就能判死。放过去会白花一次计费，拿回来的还是上游 400（2400），
+	// 把「你 URL 写错了」说成「上游判定请求不合法」，调用方只会原样重试。
+	if err := validateURLPort(parsed); err != nil {
+		return err
+	}
+	if rule, blocked := toolvalidate.SSRFBlocked(host, cfg.Security.BlockedHosts); blocked {
 		return fmt.Errorf("ssrf blocked: %w",
 			domain.NewLocalError(domain.CodeValSSRFBlocked, "该 URL 指向内网地址，已被本地安全策略拦截",
 				map[string]any{"host": host, "matched_prefix": rule}))
@@ -147,67 +131,17 @@ func validateFetchURL(raw string, cfg *config.Config) error {
 	return nil
 }
 
-func ssrfRule(host string, cfg *config.Config) (string, bool) {
-	if host == "localhost" {
-		return "localhost", true
+// validateURLPort 单独成函数：validateFetchURL 的圈复杂度已在上限边上。
+func validateURLPort(parsed *url.URL) error {
+	port := parsed.Port()
+	if port == "" {
+		return nil
 	}
-	for _, suffix := range blockedSuffixes {
-		if strings.HasSuffix(host, suffix) {
-			return suffix, true
-		}
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > 65535 {
+		return invalid("url", "端口必须在 1~65535 之间")
 	}
-	for _, blocked := range cfg.Security.BlockedHosts {
-		if host == strings.ToLower(strings.TrimSuffix(blocked, ".")) {
-			return blocked, true
-		}
-	}
-	if addr, ok := parseHostIP(host); ok {
-		return addrBlockedPrefix(addr)
-	}
-	return "", false
-}
-
-func addrBlockedPrefix(addr netip.Addr) (string, bool) {
-	addr = addr.Unmap()
-	for _, prefix := range blockedNets {
-		if prefix.Contains(addr) {
-			return prefix.String(), true
-		}
-	}
-	return "", false
-}
-
-// parseHostIP 处理十进制/八进制/十六进制 IP 与 inet_aton 省略写法。
-// netip.ParseAddr("2130706433") 会直接失败；若就此放过，它会被当成普通域名。
-func parseHostIP(host string) (netip.Addr, bool) {
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return addr, true
-	}
-	if strings.Contains(host, ":") {
-		return netip.Addr{}, false
-	}
-	labels := strings.Split(host, ".")
-	if len(labels) < 1 || len(labels) > 4 {
-		return netip.Addr{}, false
-	}
-	values := make([]uint64, len(labels))
-	for i, label := range labels {
-		if label == "" {
-			return netip.Addr{}, false
-		}
-		value, err := strconv.ParseUint(label, 0, 64)
-		if err != nil {
-			return netip.Addr{}, false
-		}
-		values[i] = value
-	}
-	number, ok := toolvalidate.CombineIPv4(values)
-	if !ok {
-		return netip.Addr{}, false
-	}
-	return netip.AddrFrom4([4]byte{
-		byte(number >> 24), byte(number >> 16), byte(number >> 8), byte(number), //nolint:gosec // 已逐段校验范围
-	}), true
+	return nil
 }
 
 // applyFetchOptions 处理 max_chars/unescape/section(s) 四个可选参数。
@@ -233,14 +167,6 @@ func applyFetchOptions(params *fetchParams, in *fetchInput) error {
 		return invalid("section/sections", "section 与 sections 只能二选一")
 	}
 	return nil
-}
-
-// ipv4Widths 返回 2/3/4 段混淆写法每段的位宽（末段吃掉剩余位）。
-
-// snapshotID 绑定「一次具体抓取」而不是「一个 URL」。
-func snapshotID(rawURL string, capturedAt time.Time) string {
-	sum := sha256.Sum256([]byte(rawURL + strconv.FormatInt(capturedAt.Unix(), 10)))
-	return "snap_" + hex.EncodeToString(sum[:8])
 }
 
 func snapshotIndexKey(id string) string { return "snapshot:" + id }

@@ -19,6 +19,7 @@ import (
 
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/mcputil"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 	"github.com/LseKit/DeepSeekSearch/internal/toolschema"
 )
@@ -43,9 +44,6 @@ type fetchHandler struct {
 // handleFetch 是 ds_fetch 的完整编排。
 // 顺序：校验/SSRF → 熔断 → 限流 → 快照/缓存 → 单飞 → 上游 → 反转义 → 分节 → 预算 → 包裹。
 func handleFetch(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp.CallToolResult {
-	if deps.Clock == nil {
-		deps.Clock = resilience.SystemClock()
-	}
 	h := &fetchHandler{deps: deps, started: deps.Clock.Now()}
 	h.logger = deps.Logger.With("call_id", domain.NewCallID(), "tool", fetchToolName)
 	ctx = h.withExchangeHook(ctx)
@@ -96,6 +94,10 @@ func (h *fetchHandler) fetchAndRender(totalCtx, ctx context.Context, params *fet
 	if hit {
 		return h.renderAndFinish(&entry, true)
 	}
+	if err := checkBudget(h.deps.Budget, "fetch"); err != nil {
+		mapped := h.mapInterrupted(ctx, totalCtx, err)
+		return h.finish(errorResult(mapped, fetchToolName), false, mapped)
+	}
 	entry, shared, fetchErr := h.fetchEntry(totalCtx, entryKey, normalized, useSingleflight)
 	if fetchErr != nil {
 		mapped := h.mapInterrupted(ctx, totalCtx, fetchErr)
@@ -113,7 +115,7 @@ func (h *fetchHandler) fetchEntry(totalCtx context.Context, entryKey, normalized
 		}
 		now := h.deps.Clock.Now()
 		entry := cachedFetchEntry{
-			CacheID:    snapshotID(rawURL, now),
+			CacheID:    domain.SnapshotID(rawURL, now),
 			URL:        normalized,
 			URLSHA256:  sha256Hex(normalized),
 			CapturedAt: now.Unix(),
@@ -160,7 +162,7 @@ func (h *fetchHandler) upstream(ctx context.Context, rawURL string) (domain.Fetc
 		}
 		h.logger.Info("call.upstream", "attempt", attempt, "url", h.redactedURL())
 		attemptStart := h.deps.Clock.Now()
-		resp, err := h.deps.Client.Fetch(domain.ContextWithAttempt(ctx, attempt), domain.FetchRequest{Url: rawURL})
+		resp, err := h.deps.clientFor("fetch").Fetch(domain.ContextWithAttempt(ctx, attempt), domain.FetchRequest{Url: rawURL})
 		ms := h.deps.Clock.Now().Sub(attemptStart).Milliseconds()
 		args := []any{"attempt", attempt, "ms", ms, "ok", err == nil, "url", h.redactedURL()}
 		if err != nil {
@@ -173,6 +175,7 @@ func (h *fetchHandler) upstream(ctx context.Context, rawURL string) (domain.Fetc
 		h.logger.Info("call.upstream.done", args...)
 		if err == nil {
 			h.recordCircuit(nil)
+			recordBudget(h.deps.Budget, "fetch")
 			return resp, nil
 		}
 		// 同 search：用 fn 实际收到的 ctx 判断，避免 totalCtx 的 timer 竞争把总预算到期误判成 2998。
@@ -199,17 +202,19 @@ func (h *fetchHandler) upstream(ctx context.Context, rawURL string) (domain.Fetc
 }
 
 func (h *fetchHandler) shouldRetry(err error, attempt int) (bool, resilience.Reason) {
-	if h.deps.Retry == nil {
+	r := h.deps.retryFor("fetch")
+	if r == nil {
 		return false, resilience.ReasonDisabled
 	}
-	return h.deps.Retry.Should(err, attempt)
+	return r.Should(err, attempt)
 }
 
 func (h *fetchHandler) retryDelay(attempt int) time.Duration {
-	if h.deps.Retry == nil {
+	r := h.deps.retryFor("fetch")
+	if r == nil {
 		return 0
 	}
-	return h.deps.Retry.Delay(attempt)
+	return r.Delay(attempt)
 }
 
 func (h *fetchHandler) waitRetry(ctx context.Context, delay time.Duration) bool {
@@ -224,8 +229,9 @@ func (h *fetchHandler) waitRetry(ctx context.Context, delay time.Duration) bool 
 	}
 }
 
-// withExchangeHook 在开启报文日志时把本次调用的收集器挂到 ctx（DEBT-009）。
+// withExchangeHook 在开启报文日志时把本次调用的收集器挂到 ctx。
 // 请求体里的 URL 先脱敏 —— ?token=/?sig= 不能因排查而落盘。
+// 响应体也 MUST 脱敏：上游 401 会回显 API Key，这是它唯一可能落盘的路径。
 func (h *fetchHandler) withExchangeHook(ctx context.Context) context.Context {
 	limitKB := h.deps.Cfg.Log.MaxBodyLogKb
 	if limitKB <= 0 {
@@ -234,7 +240,9 @@ func (h *fetchHandler) withExchangeHook(ctx context.Context) context.Context {
 	limitBytes := limitKB * 1024
 	return deepseek.WithExchangeHook(ctx, func(_ context.Context, req, resp []byte) {
 		h.reqBody = domain.ClipBytes(redactFetchURL(req, h.deps.Cfg.Log.RedactQueryKeys), limitBytes)
-		h.respBody = domain.ClipBytes(resp, limitBytes)
+		// 先脱敏再截断：截断可能把 sk- Key 切成两半，剩下的碎片既不匹配脱敏正则，
+		// 也照样能被人拿去撞库。
+		h.respBody = domain.ClipBytes([]byte(domain.RedactSecrets(string(resp))), limitBytes)
 	})
 }
 
@@ -260,9 +268,6 @@ func (h *fetchHandler) recordCircuit(err error) {
 	}
 }
 
-// replayCache 返回可直接渲染的缓存项；第三个返回值表示能否参与 singleflight。
-// no_cache / 读错误 / 键碰撞都必须绕过缓存且不参与 singleflight —— 否则
-// 「no_cache 必定计费」在并发下不成立（DEBT-003）。
 // admit 走熔断与限流；acquired=true 时调用方 MUST defer Release。
 func (h *fetchHandler) admit(ctx, totalCtx context.Context) (acquired bool, res *mcp.CallToolResult) {
 	if h.deps.Circuit != nil {
@@ -290,6 +295,9 @@ func (h *fetchHandler) fromSnapshot(totalCtx context.Context) *mcp.CallToolResul
 	return h.renderAndFinish(&entry, true)
 }
 
+// replayCache 返回可直接渲染的缓存项；第三个返回值表示能否参与 singleflight。
+// no_cache / 读错误 / 键碰撞都必须绕过缓存且不参与 singleflight —— 否则
+// 「no_cache 必定计费」在并发下不成立。
 func (h *fetchHandler) replayCache(ctx context.Context, entryKey, normalized string) (cachedFetchEntry, bool, bool) {
 	if h.params.NoCache {
 		return cachedFetchEntry{}, false, false
@@ -342,6 +350,12 @@ func (h *fetchHandler) commitFunc(entryKey string) func(context.Context, []byte)
 	return func(ctx context.Context, raw []byte) error {
 		if err := h.deps.Cache.Put(ctx, entryKey, raw, ttl); err != nil {
 			return fmt.Errorf("put fetch entry: %w", err)
+		}
+		// Put 对超大条目是「不写入但返回 nil」；再确认一次命中，避免写出指向不存在条目的 cache_id。
+		if _, hit, getErr := h.deps.Cache.Get(ctx, entryKey); getErr != nil {
+			return fmt.Errorf("verify fetch entry: %w", getErr)
+		} else if !hit {
+			return fmt.Errorf("verify fetch entry: 未命中（可能超过单条上限）")
 		}
 		var entry cachedFetchEntry
 		if err := json.Unmarshal(raw, &entry); err != nil {
@@ -485,9 +499,11 @@ func parseFetchRequest(req *mcp.CallToolRequest) (*fetchInput, error) {
 		return nil, invalid("arguments", "缺少请求参数")
 	}
 	var in fetchInput
+	// 空 arguments 不当解析错误：交给下游按「url 与 cache_id 都缺」报 1000。
+	// 非空时走 mcputil.ParseInput，未知键（拼错的参数名）MUST 被拒而不是静默忽略。
 	if len(req.Params.Arguments) > 0 {
-		if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
-			return nil, invalid("arguments", "无法解析 JSON 参数")
+		if err := mcputil.ParseInput(req, &in); err != nil {
+			return nil, fmt.Errorf("parse arguments: %w", err)
 		}
 	}
 	return &in, nil
@@ -505,7 +521,7 @@ type fetchTool struct{}
 func (t *fetchTool) Name() string { return "ds_fetch" }
 
 // Register 把 ds_fetch 的 schema、annotations 与 handler 注册到 server。
-func (t *fetchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名由 11 号 §五 固定
+func (t *fetchTool) Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 签名与 MCP 工具注册接口保持一致
 	srv.AddTool(fetchToolDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return handleFetch(ctx, &deps, req), nil
 	})

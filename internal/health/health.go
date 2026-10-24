@@ -20,6 +20,7 @@ import (
 	"github.com/LseKit/DeepSeekSearch/internal/config"
 	"github.com/LseKit/DeepSeekSearch/internal/deepseek"
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
+	"github.com/LseKit/DeepSeekSearch/internal/mcputil"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience/circuit"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience/ratelimit"
@@ -62,6 +63,12 @@ type UsageRecorder interface {
 
 // Register 把 ds_health 的 schema、annotations 与 handler 注册到 server。
 func Register(srv *mcp.Server, deps Deps) { //nolint:gocritic // 与 tools.Tool 的按值签名保持一致
+	if deps.Clock == nil {
+		deps.Clock = resilience.SystemClock()
+	}
+	if deps.Logger == nil {
+		deps.Logger = slog.Default()
+	}
 	srv.AddTool(healthToolDefinition(), func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return handleHealth(ctx, &deps, req), nil
 	})
@@ -122,12 +129,9 @@ type healthHandler struct {
 
 // handleHealth 只做本地检查；唯一网络动作是 probe_upstream=true 时的 Client.Ping（405，不计费）。
 func handleHealth(ctx context.Context, deps *Deps, req *mcp.CallToolRequest) *mcp.CallToolResult {
-	if deps.Clock == nil {
-		deps.Clock = resilience.SystemClock()
-	}
 	h := &healthHandler{deps: deps, started: deps.Clock.Now()}
 	h.logger = deps.Logger.With("call_id", domain.NewCallID(), "tool", "ds_health")
-	h.logger.Info("call.begin")
+	h.logger.Info(domain.EvCallBegin)
 
 	in, err := parseHealthRequest(req)
 	if err != nil {
@@ -193,12 +197,12 @@ func (h *healthHandler) finish(res *mcp.CallToolResult, err error) *mcp.CallTool
 	if err != nil {
 		args = append(args, "code", domain.CodeOf(err))
 	}
-	h.logger.Info("call.end", args...)
+	h.logger.Info(domain.EvCallEnd, args...)
 	if h.deps.Usage != nil {
 		h.deps.Usage.Record("ds_health", false, false, err)
 	}
 	if slow := h.deps.Cfg.Log.SlowMs; slow > 0 && ms > int64(slow) {
-		h.logger.Warn("warn.slow", "ms", ms)
+		h.logger.Warn(domain.EvWarnSlow, "ms", ms)
 	}
 	return res
 }
@@ -286,8 +290,8 @@ func (h *healthHandler) checkLimiter() healthCheck {
 			diag := diagnoser.Diagnostics(key)
 			keyOK := diag.Waiters == 0 || diag.EstimatedWaitMs < maxWait
 			ok = ok && keyOK
-			detail += fmt.Sprintf("%s: inflight=%d/%d waiters=%d est=%dms stage=%s; ",
-				key, diag.Inflight, diag.Quota, diag.Waiters, diag.EstimatedWaitMs, diag.Stage)
+			detail += fmt.Sprintf("%s: rps=%.1f burst=%d inflight=%d/%d waiters=%d est=%dms stage=%s; ",
+				key, diag.RPS, diag.Burst, diag.Inflight, diag.Quota, diag.Waiters, diag.EstimatedWaitMs, diag.Stage)
 			continue
 		}
 		depth := h.deps.Limiter.Depth(key)
@@ -395,9 +399,11 @@ func parseHealthRequest(req *mcp.CallToolRequest) (*healthInput, error) {
 		return nil, invalid("arguments", "缺少请求参数")
 	}
 	var in healthInput
+	// 空 arguments 不当解析错误：probe_upstream 缺省即 false。
+	// 非空时走 mcputil.ParseInput，未知键（拼错的参数名）MUST 被拒而不是静默忽略。
 	if len(req.Params.Arguments) > 0 {
-		if err := json.Unmarshal(req.Params.Arguments, &in); err != nil {
-			return nil, invalid("arguments", "无法解析 JSON 参数")
+		if err := mcputil.ParseInput(req, &in); err != nil {
+			return nil, fmt.Errorf("parse arguments: %w", err)
 		}
 	}
 	return &in, nil

@@ -73,7 +73,7 @@ func (h *fetchHandler) render(entry *cachedFetchEntry, fromCache bool) (*mcp.Cal
 	}
 	setFetchCacheMeta(&out, entry.CapturedAt, fromCache, h.deps.Clock.Now())
 
-	// 12 号 §4.1：warnings 必带 —— 空数组也要出现，避免客户端写两套分支。
+	// warnings 必带 —— 空数组也要出现，避免客户端写两套分支。
 	warnings, err := h.applyMode(&out, content, entry.URL)
 	if err != nil {
 		return nil, mode, err
@@ -149,11 +149,10 @@ func (h *fetchHandler) renderOutline(source, content string) (sections []fetchSe
 		warnings = append(warnings, fmt.Sprintf("目录已折叠，共 %d 节", len(all)))
 		all = all[:limit]
 	}
-	offsets := sectionOffsets(outline.Sections)
 	rendered := make([]fetchSectionOutput, 0, len(all))
 	used := 0
-	for i, section := range all {
-		body, _ := domain.SliceByRune(content, offsets[i], section.Chars)
+	for _, section := range all {
+		body, _ := domain.SliceByRune(content, section.Start, section.Chars)
 		preview, _ := domain.SliceByRune(body, 0, sectionPreviewRunes)
 		wrapped := domain.WrapUntrusted(source, preview)
 		cost := utf8.RuneCountInString(section.Id) + utf8.RuneCountInString(section.Title) + utf8.RuneCountInString(wrapped)
@@ -177,19 +176,8 @@ func (h *fetchHandler) renderOutline(source, content string) (sections []fetchSe
 	return rendered, outline.OutlineKind, truncated, warnings
 }
 
-func sectionOffsets(sections []domain.Section) []int {
-	offsets := make([]int, len(sections))
-	offset := 0
-	for i, section := range sections {
-		offsets[i] = offset
-		offset += section.Chars
-	}
-	return offsets
-}
-
 func (h *fetchHandler) selectSections(content string) (string, error) {
 	outline := domain.SplitSections(content, h.fixedChunkChars())
-	offsets := sectionOffsets(outline.Sections)
 	index := make(map[string]int, len(outline.Sections))
 	for i, section := range outline.Sections {
 		index[section.Id] = i
@@ -199,11 +187,16 @@ func (h *fetchHandler) selectSections(content string) (string, error) {
 	for _, id := range ids {
 		pos, ok := index[id]
 		if !ok {
-			return "", fmt.Errorf("section not found: %w",
-				domain.NewLocalError(domain.CodeValSectionNotFound, "指定的节不存在",
-					map[string]any{"section": id, "cache_id": h.params.CacheID}))
+			field := "sections"
+			if h.params.Section != "" {
+				field = "section"
+			}
+			return "", fmt.Errorf("section not found: %w", domain.NewLocalError(
+				domain.CodeValSectionNotFound, "指定的节不存在", map[string]any{
+					"field": field, "detail": "not_in_toc", "section": id, "cache_id": h.params.CacheID,
+				}))
 		}
-		body, _ := domain.SliceByRune(content, offsets[pos], outline.Sections[pos].Chars)
+		body, _ := domain.SliceByRune(content, outline.Sections[pos].Start, outline.Sections[pos].Chars)
 		parts = append(parts, body)
 	}
 	return strings.Join(parts, "\n\n---\n\n"), nil
