@@ -204,14 +204,14 @@ func TestSectionAndOutlineJSON(t *testing.T) {
 	outline := Outline{
 		OutlineKind: "fixed",
 		Sections: []Section{
-			{Id: "c0", Level: 1, Title: "", Chars: 3},
+			{Id: "c0", Level: 1, Title: "", Start: 0, Chars: 3},
 		},
 	}
 	raw, err := json.Marshal(outline)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	want := `{"outline_kind":"fixed","sections":[{"id":"c0","level":1,"title":"","chars":3}]}`
+	want := `{"outline_kind":"fixed","sections":[{"id":"c0","level":1,"title":"","start":0,"chars":3}]}`
 	if string(raw) != want {
 		t.Errorf("JSON = %s, want %s", raw, want)
 	}

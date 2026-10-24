@@ -28,10 +28,14 @@ var fenceRe = regexp.MustCompile("^\\s*```")
 
 // Section 是目录里的一个节，只含元信息；正文由调用方按快照切取。
 type Section struct {
-	Id    string `json:"id"` //nolint:revive // 契约字段名，见 12 号 §5.3
+	Id    string `json:"id"` //nolint:revive // 对外字段名固定为 Id
 	Level int    `json:"level"`
 	Title string `json:"title"`
-	Chars int    `json:"chars"`
+	// Start 是本节正文在整篇里的 rune 偏移，由切分方给出。
+	// MUST NOT 让调用方累加 Chars 推偏移：纯空白前言不会生成节，
+	// 累加会让其后的每一节整体错位（取到上一节的尾巴，末尾一节永远取不到）。
+	Start int `json:"start"`
+	Chars int `json:"chars"`
 }
 
 // Outline 是一次切分的结果，只含目录元信息，不含正文。
@@ -42,8 +46,8 @@ type Outline struct {
 
 // SplitSections 把正文切成节。判定顺序：标题 → 固定分块 → 单节兜底。
 //
-// 只负责「切」，不负责选 inline/outline/section 模式；那个判断属于调用方
-// （12 号 §5.1）。fixedChunk <= 0 时整篇作为一节，避免死循环。
+// 只负责「切」，不负责选 inline/outline/section 模式；那个判断属于调用方。
+// fixedChunk <= 0 时整篇作为一节，避免死循环。
 func SplitSections(content string, fixedChunk int) Outline {
 	heads := scanHeadings(content)
 	if len(heads) >= 2 {
@@ -93,26 +97,33 @@ func buildHeadingOutline(content string, heads []headingMark) Outline {
 
 	// 第一个标题前只要有非空白正文就合成前言，否则这段内容会从目录里消失。
 	// 最常见的触发是文档直接从 h2 开始（缺 h1）。
-	if pre := content[:heads[0].start]; strings.TrimSpace(pre) != "" {
+	pre := content[:heads[0].start]
+	preRunes := utf8.RuneCountInString(pre)
+	if strings.TrimSpace(pre) != "" {
 		sections = append(sections, Section{
 			Id:    prefixHeading + strconv.Itoa(len(sections)),
 			Level: 0,
 			Title: prefaceTitle,
-			Chars: utf8.RuneCountInString(pre),
+			Chars: preRunes,
 		})
 	}
 
+	// 空白前言不生成节，但它占的 rune 数仍要算进第一节的 Start。
+	start := preRunes
 	for i, h := range heads {
 		end := len(content)
 		if i+1 < len(heads) {
 			end = heads[i+1].start
 		}
+		chars := utf8.RuneCountInString(content[h.start:end])
 		sections = append(sections, Section{
 			Id:    prefixHeading + strconv.Itoa(len(sections)),
 			Level: h.level,
 			Title: h.title,
-			Chars: utf8.RuneCountInString(content[h.start:end]),
+			Start: start,
+			Chars: chars,
 		})
+		start += chars
 	}
 
 	return Outline{OutlineKind: outlineHeadings, Sections: sections}
@@ -139,6 +150,7 @@ func buildFixedOutline(content string, fixedChunk int) Outline {
 		sections = append(sections, Section{
 			Id:    prefixFixed + strconv.Itoa(len(sections)),
 			Level: 1,
+			Start: start,
 			Chars: end - start,
 		})
 	}
