@@ -42,6 +42,7 @@ type singleflight struct {
 	clk          resilience.Clock
 	owner        string
 	pollInterval time.Duration
+	pollAfter    func(time.Duration) <-chan time.Time
 	searchLeaseS int64
 	fetchLeaseS  int64
 	maxEntrySize int64
@@ -87,6 +88,7 @@ func NewSingleflight(cache resilience.Cache, clk resilience.Clock) resilience.Si
 		clk:          clk,
 		owner:        ownerID(clk),
 		pollInterval: cachePollInterval,
+		pollAfter:    clk.After,
 		searchLeaseS: leaseSecondsFor(defaultSearchTimeout),
 		fetchLeaseS:  leaseSecondsFor(defaultFetchTimeout),
 	}
@@ -172,14 +174,12 @@ func (s *singleflight) cached(ctx context.Context, storageKey string) (val []byt
 }
 
 func (s *singleflight) waitCall(ctx context.Context, current *call, userKey string, waitMs int) (val []byte, shared bool, err error) {
-	timer := time.NewTimer(time.Duration(waitMs) * time.Millisecond)
-	defer timer.Stop()
 	select {
 	case <-current.done:
 		return current.val, true, current.err
 	case <-ctx.Done():
 		return nil, true, fmt.Errorf("singleflight wait canceled: %w", ctx.Err())
-	case <-timer.C:
+	case <-s.clk.After(time.Duration(waitMs) * time.Millisecond):
 		return nil, true, waitTimeoutError(userKey, waitMs)
 	}
 }
@@ -202,7 +202,7 @@ func (s *singleflight) lead(
 	}
 	defer finish()
 
-	deadline := time.Now().Add(time.Duration(waitMs) * time.Millisecond)
+	deadline := s.clk.Now().Add(time.Duration(waitMs) * time.Millisecond)
 	for {
 		if s.fillFromCache(ctx, storageKey, userKey, current) {
 			return
@@ -274,7 +274,11 @@ func (s *singleflight) readLeaseState(
 		s.runOwner(ctx, storageKey, userKey, current, fn, commit, false, finish)
 		return leaseRow{}, false, true
 	}
-	if found && lease.LastErrorCode != 0 {
+	// 错误行同样 MUST 判过期：租约的「标记失败」与「删除」不是原子的，进程被 SIGKILL
+	// 或删除失败（只记日志）就会留下一行 last_error_code≠0 的记录。不判过期的话这个
+	// key 会被永久毒化 —— 所有进程对它恒返回 3075，重启也不恢复（Prune 只清 cache 表）。
+	// 过期后交回正常路径，由 tryPreempt 抢占重跑。
+	if found && lease.LastErrorCode != 0 && lease.ExpiresAt >= s.clk.Now().Unix() {
 		current.err = ownerFailedError(userKey, lease.LastErrorCode)
 		return leaseRow{}, false, true
 	}
@@ -283,7 +287,7 @@ func (s *singleflight) readLeaseState(
 
 // waitNextPoll 等到下一次轮询；返回 true 表示已结束（超时或 ctx 取消）。
 func (s *singleflight) waitNextPoll(ctx context.Context, deadline time.Time, waitMs int, userKey string, current *call) bool {
-	if time.Now().After(deadline) {
+	if s.clk.Now().After(deadline) {
 		current.err = waitTimeoutError(userKey, waitMs)
 		return true
 	}
@@ -291,9 +295,17 @@ func (s *singleflight) waitNextPoll(ctx context.Context, deadline time.Time, wai
 	case <-ctx.Done():
 		current.err = fmt.Errorf("singleflight wait canceled: %w", ctx.Err())
 		return true
-	case <-time.After(s.pollInterval):
+	case <-s.afterPoll(s.pollInterval):
 		return false
 	}
+}
+
+// afterPoll 默认走注入的 Clock；测试可替换为真实定时器来驱动轮询节奏。
+func (s *singleflight) afterPoll(d time.Duration) <-chan time.Time {
+	if s.pollAfter != nil {
+		return s.pollAfter(d)
+	}
+	return s.clk.After(d)
 }
 
 // tryPreempt 处理租约过期抢占；返回 true 表示 lead 已结束。
