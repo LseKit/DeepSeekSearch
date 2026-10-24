@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"io"
 	"io/fs"
 	"os"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
 
 const (
@@ -36,7 +37,7 @@ type Clock interface {
 	After(d time.Duration) <-chan time.Time
 }
 
-// Config 是 logging 的窄配置，由 Task-12 从 config.Config 映射。
+// Config 是 logging 的窄配置，由装配层从 config.Config 映射。
 // Clock 与 TZ MUST 非 nil；MaxSizeMb / DailyMaxMb 为 0 表示不设该上限。
 type Config struct {
 	Dir        string
@@ -82,7 +83,7 @@ type RotatingWriter struct {
 
 // NewRotatingWriter 创建日志目录、打开今天的日志文件、执行一次启动清理，并拉起调度 goroutine。
 // Close 负责回收该 goroutine；调用方 MUST 在进程退出前调用 Close。
-func NewRotatingWriter(cfg Config) (*RotatingWriter, error) { //nolint:gocritic // 签名由 Task-04 A-01 固定
+func NewRotatingWriter(cfg Config) (*RotatingWriter, error) { //nolint:gocritic // 签名与日志轮转器构造保持一致
 	if err := prepareWriterConfig(&cfg); err != nil {
 		return nil, err
 	}

@@ -21,10 +21,10 @@ import (
 )
 
 // New 构造日志器。返回值里的 closer MUST 在进程退出前调用，
-// 否则后台调度 goroutine 不会被回收（A-01 要求 13）。
+// 否则后台调度 goroutine 不会被回收。
 //
 // 绝不写 stdout：stdio 传输下那是协议通道，混一个字节客户端就断开。
-func New(cfg Config) (*slog.Logger, io.Closer, error) { //nolint:gocritic // 签名由 Task-04 A-02 固定
+func New(cfg Config) (*slog.Logger, io.Closer, error) { //nolint:gocritic // 签名与日志构造保持一致
 	if cfg.TsFormat == "" {
 		cfg.TsFormat = time.RFC3339
 	}
@@ -36,7 +36,7 @@ func New(cfg Config) (*slog.Logger, io.Closer, error) { //nolint:gocritic // 签
 	var out io.Writer = w
 	if cfg.AlsoStderr {
 		// stderr 分支与文件分支共享配额状态：配额达标后限频采样，
-		// 否则 500MB 的闸只保护磁盘，stderr 管道对端会被灌爆（A-01 要求 5②）。
+		// 否则 500MB 的闸只保护磁盘，stderr 管道对端会被灌爆。
 		out = io.MultiWriter(w, &samplingWriter{dst: os.Stderr, quota: w.quotaExceeded, every: 100})
 	}
 
@@ -46,6 +46,10 @@ func New(cfg Config) (*slog.Logger, io.Closer, error) { //nolint:gocritic // 签
 			if len(groups) == 0 && a.Key == slog.TimeKey && a.Value.Kind() == slog.KindTime {
 				// 用注入 Clock 而不是 slog 内部的真实时钟：否则行内时间无法确定性测试（H8）。
 				a.Value = slog.StringValue(cfg.Clock.Now().In(cfg.TZ).Format(cfg.TsFormat))
+			}
+			if carriesUpstreamText(a.Key) && a.Value.Kind() == slog.KindString {
+				// 采集侧已经脱敏一次；日志写入路径再跑一次，防御重构漏脱敏。
+				a.Value = slog.StringValue(domain.RedactSecrets(a.Value.String()))
 			}
 			return a
 		},
@@ -58,13 +62,26 @@ func New(cfg Config) (*slog.Logger, io.Closer, error) { //nolint:gocritic // 签
 	}
 
 	// config_sha256 是进程级属性，一次性全局注入，保证每个事件必带。
-	// 不写死「N/N」：事件数的真源是 Task-04 A-02，写死会随事件增减漂移。
+	// 不写死「N/N」：事件数由 events.go 定义，写死会随事件增减漂移。
 	return slog.New(handler).With("config_sha256", cfg.ConfigSha), w, nil
+}
+
+// carriesUpstreamText 列出可能带上游原文的日志键。
+// 上游 401 体里会回显 API Key，报文日志开启时整段响应体会进日志，
+// 所以这两个键在写入前 MUST 再过一次脱敏 —— 采集侧漏了也不会落盘。
+// req_body 不在列：请求体是我方构造的，Key 走 Authorization 头，不进 body。
+func carriesUpstreamText(key string) bool {
+	switch key {
+	case "upstream_msg", "resp_body":
+		return true
+	default:
+		return false
+	}
 }
 
 // ConfigSha256 返回配置指纹：对 Redacted() 后的 JSON 求 sha256，取前 12 位。
 // 只改 ApiKey / HttpToken 不改变指纹，二者既不带 json tag 也被 Redacted 覆盖。
-func ConfigSha256(cfg config.Config) string { //nolint:gocritic // 签名由 Task-04 A-02 固定
+func ConfigSha256(cfg config.Config) string { //nolint:gocritic // 签名与日志构造保持一致
 	data, err := json.Marshal(cfg.Redacted())
 	if err != nil {
 		return ""
