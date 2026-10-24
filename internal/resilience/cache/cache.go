@@ -1,5 +1,5 @@
 // 文件名: cache.go
-// 用途: 实现缓存 key 归一化、singleflight 共享的 oversize 编解码与淘汰簿记逻辑。
+// 用途: 实现缓存存储 key 前缀、singleflight 共享的 oversize 编解码与淘汰簿记逻辑。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>

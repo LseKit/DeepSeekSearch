@@ -54,8 +54,8 @@ func TestStdioE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list 失败: %v", err)
 	}
-	if len(toolsResult.Tools) != 3 {
-		t.Fatalf("tools/list 返回 %d 个工具, want 3", len(toolsResult.Tools))
+	if len(toolsResult.Tools) != 5 {
+		t.Fatalf("tools/list 返回 %d 个工具, want 5", len(toolsResult.Tools))
 	}
 
 	billable(t)
@@ -72,7 +72,7 @@ func TestStdioE2E(t *testing.T) {
 }
 
 // L3b-5：P17（stdio 原始管道）与 P18（HTTP + SSE 首包 <1s）各一次真实调用。
-// P18 的负向验证（把 statusWriter.Flush 改成空实现）已在 Task-11 A-02 单元用例完成；
+// P18 的负向验证（把 statusWriter.Flush 改成空实现）已有单元用例覆盖；
 // 这里不重复，避免再产生一次计费调用。
 func TestProtocol_P17_P18(t *testing.T) {
 	skipWithoutKey(t)

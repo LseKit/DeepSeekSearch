@@ -34,7 +34,7 @@ type budgetEntry struct {
 }
 
 // NewBudget 构造预算控制器。
-func NewBudget(cfg resilience.Config, clk resilience.Clock) resilience.Budget { //nolint:gocritic // 签名由 11 号 §四 固定
+func NewBudget(cfg resilience.Config, clk resilience.Clock) resilience.Budget { //nolint:gocritic // 签名与 resilience 接口保持一致
 	if clk == nil {
 		clk = resilience.SystemClock()
 	}

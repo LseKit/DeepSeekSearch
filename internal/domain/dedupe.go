@@ -12,11 +12,11 @@ import (
 	"strings"
 )
 
-// SearchResult 是上游 searchItem 的对外表示，字段与 12 号 §1.2 逐字对应。
+// SearchResult 是上游 searchItem 的对外表示，字段固定。
 type SearchResult struct {
 	RerankScore float64 `json:"rerank_score"`
 	Title       string  `json:"title"`
-	Url         string  `json:"url"` //nolint:revive // 契约字段名，见 12 号 §1.2
+	Url         string  `json:"url"` //nolint:revive // 对外字段名固定为 Url
 	Snippet     string  `json:"snippet"`
 	Summary     string  `json:"summary"`
 	Content     string  `json:"content"`
@@ -56,11 +56,14 @@ func Dedupe(items []SearchResult, maxPerDomain int, trackingParams []string) (ke
 		seenURL[hash] = struct{}{}
 
 		key := repostOf(item)
-		if _, ok := seenRepost[key]; ok {
-			stats.DroppedRepost++
-			continue
+		// 标题与站点都为空时无法判断是否转载；全空 key 会把互不相关的条目判成同一篇。
+		if key.title != "" || key.hasSite {
+			if _, ok := seenRepost[key]; ok {
+				stats.DroppedRepost++
+				continue
+			}
+			seenRepost[key] = struct{}{}
 		}
-		seenRepost[key] = struct{}{}
 
 		if maxPerDomain > 0 {
 			host := hostOf(item.Url)

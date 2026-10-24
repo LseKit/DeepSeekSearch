@@ -29,14 +29,15 @@ type circuit struct {
 }
 
 type circuitState struct {
-	status    string
-	failures  int
-	openedAt  time.Time
-	probes    int
-	successes int
+	status     string
+	failures   int
+	openedAt   time.Time
+	halfOpenAt time.Time
+	probes     int
+	successes  int
 }
 
-// breakerCodes 是计入熔断失败的码白名单，与 14 号 §6.1 逐字一致。
+// breakerCodes 是计入熔断失败的码白名单。
 var breakerCodes = map[int]bool{
 	domain.CodeUpTimeout:        true, // 2408
 	domain.CodeUpRateLimited:    true, // 2429
@@ -47,8 +48,8 @@ var breakerCodes = map[int]bool{
 	domain.CodeUpParse:          true, // 2999
 }
 
-// NewCircuit 构造熔断器；配置缺失时用文档默认值兜底。
-func NewCircuit(cfg resilience.Config, clk resilience.Clock) resilience.Circuit { //nolint:gocritic // 签名由 11 号 §四 固定
+// NewCircuit 构造熔断器；配置缺失时用内置默认值兜底。
+func NewCircuit(cfg resilience.Config, clk resilience.Clock) resilience.Circuit { //nolint:gocritic // 签名与 resilience 接口保持一致
 	if clk == nil {
 		clk = resilience.SystemClock()
 	}
@@ -109,6 +110,7 @@ func (c *circuit) Record(key string, err error) {
 			state.failures = 0
 			state.probes = 0
 			state.successes = 0
+			state.halfOpenAt = time.Time{}
 		}
 	case stateClosed:
 		if failed {
@@ -169,20 +171,28 @@ func (c *circuit) stateLocked(key string) *circuitState {
 }
 
 func (c *circuit) refreshLocked(state *circuitState, now time.Time) {
-	if state.status != stateOpen {
-		return
-	}
 	openFor := time.Duration(c.cfg.CircuitOpenMs) * time.Millisecond
-	if now.Sub(state.openedAt) >= openFor {
-		state.status = stateHalfOpen
-		state.probes = 0
-		state.successes = 0
+	switch state.status {
+	case stateOpen:
+		if now.Sub(state.openedAt) >= openFor {
+			state.status = stateHalfOpen
+			state.halfOpenAt = now
+			state.probes = 0
+			state.successes = 0
+		}
+	case stateHalfOpen:
+		// 探测名额可能被缓存命中消耗而永不 Record；超过一个 open 窗口就重新打开，
+		// 否则 probes 会被顶满，熔断器永久卡在 3030。
+		if !state.halfOpenAt.IsZero() && now.Sub(state.halfOpenAt) >= openFor {
+			c.openLocked(state, now)
+		}
 	}
 }
 
 func (c *circuit) openLocked(state *circuitState, now time.Time) {
 	state.status = stateOpen
 	state.openedAt = now
+	state.halfOpenAt = time.Time{}
 	// 保留失败计数：Open 期间诊断仍要看得到「是几次失败触发的」，清零会误导排查。
 	state.probes = 0
 	state.successes = 0

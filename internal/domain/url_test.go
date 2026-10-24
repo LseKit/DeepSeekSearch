@@ -11,6 +11,22 @@ import (
 	"testing"
 )
 
+func TestNormalizeUrlKeepsMalformedQuery(t *testing.T) {
+	t.Parallel()
+
+	broken, err := NormalizeUrl("https://example.com/?a=1&b=%zz", nil)
+	if err != nil {
+		t.Fatalf("NormalizeUrl() = %v", err)
+	}
+	clean, err := NormalizeUrl("https://example.com/?a=1", nil)
+	if err != nil {
+		t.Fatalf("NormalizeUrl() = %v", err)
+	}
+	if broken == clean {
+		t.Fatalf("非法 query 被静默丢弃，两个 URL 撞成同一个 key: %q", broken)
+	}
+}
+
 func TestNormalizeUrl(t *testing.T) {
 	t.Parallel()
 

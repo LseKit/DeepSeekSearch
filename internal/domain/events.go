@@ -1,12 +1,12 @@
 // 文件名: events.go
-// 用途: 定义全部 28 个日志事件名常量（真源是 Task-04 A-02 §3.1）。
+// 用途: 定义全部 28 个日志事件名常量。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
 
 package domain
 
-// 日志事件名常量；语义真源是 Task-04 A-02 §3.1，本文件只做代码落地。
+// 日志事件名常量集中定义在这里，其它包只引用。
 const (
 	EvAppStart     = "app.start"
 	EvAppConfig    = "app.config"

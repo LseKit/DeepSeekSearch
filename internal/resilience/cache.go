@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Cache 是持久化键值缓存。阶段一唯一实现是 SQLite 版本，理由见 ADR-006。
+// Cache 是持久化键值缓存。阶段一唯一实现是 SQLite 版本（纯 Go、无 CGO）。
 type Cache interface {
 	// Get 命中返回 (值, true)。过期视为未命中并删除。
 	Get(ctx context.Context, key string) ([]byte, bool, error)
@@ -19,7 +19,7 @@ type Cache interface {
 	Put(ctx context.Context, key string, val []byte, ttl time.Duration) error
 	// Stats 返回当前条目数与总字节数，供日志与 /healthz 使用。
 	Stats() (entries int, bytes int64, degraded bool)
-	// Prune 主动清理过期条目。启动时一次 + 每 prune_interval_s 一次。
+	// Prune 主动清理过期条目。启动时一次 + 每 cache.prune_interval_s（默认 300s）一次。
 	Prune(ctx context.Context) (removed int, err error)
 	// Close 停止 prune 调度并关闭连接；可重复调用。
 	Close() error
@@ -32,12 +32,12 @@ type Singleflight interface {
 	// 返回 shared=true 表示本次没有真正执行 fn（结果来自他人）。
 	// 等待超过 waitMs 返回 *domain.LocalError（3075）。
 	//
-	// 🔴 commit MUST 是 Do 的参数，不能由调用方在 Do 返回后再自己 Put：
+	// commit MUST 是 Do 的参数，不能由调用方在 Do 返回后再自己 Put：
 	//    owner 的顺序必须是 fn 成功 → commit(val) 成功 → 才 DELETE 租约。
 	//    否则「租约消失」与「值可读」之间存在窗口，跨进程等待者在这个窗口里
 	//    既读不到值也看不到租约，只能重新发起上游请求 ⇒ 同一次调用被计费两次。
 	//
-	// 🔴 返回的 val 是共享的底层数组，所有等待者只读，MUST NOT 原地修改。
+	// 返回的 val 是共享的底层数组，所有等待者只读，MUST NOT 原地修改。
 	Do(ctx context.Context, key string, waitMs int,
 		fn func(context.Context) ([]byte, error),
 		commit func(context.Context, []byte) error) (val []byte, shared bool, err error)

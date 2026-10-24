@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/LseKit/DeepSeekSearch/internal/domain"
 )
@@ -57,6 +58,33 @@ func TestHandleSearchBudget(t *testing.T) {
 		}
 		if len(out.Warnings) == 0 {
 			t.Fatal("预算截断应写入 warnings")
+		}
+	})
+
+	t.Run("首条content也受预算约束", func(t *testing.T) {
+		t.Parallel()
+		client := &fakeClient{searchFn: func(context.Context, domain.SearchRequest) (domain.SearchResponse, error) {
+			date := "2026-10-20T10:00:00Z"
+			return domain.SearchResponse{Results: []domain.SearchResult{{
+				RerankScore: 2.5,
+				Title:       "big content",
+				Url:         "https://big.example.com/page",
+				Content:     strings.Repeat("y", 50000),
+				Date:        &date,
+				Authority:   3,
+			}}}, nil
+		}}
+		deps, _ := newTestDeps(t, client, nil)
+		detail := "content"
+		out := decodeSuccess(t, invokeSearch(t, &deps, &searchInput{Query: "big", Detail: &detail}))
+		if len(out.Results) != 1 || out.Results[0].Content == nil {
+			t.Fatalf("results = %+v", out.Results)
+		}
+		if got := utf8.RuneCountInString(*out.Results[0].Content); got > 32000 {
+			t.Fatalf("content = %d rune, want <= 32000", got)
+		}
+		if len(out.Warnings) == 0 {
+			t.Fatal("content 截断应写入 warnings")
 		}
 	})
 

@@ -119,8 +119,23 @@ func TestClient(t *testing.T) {
 			t.Fatalf("Code = %d, want %d（err=%v）", got, domain.CodeUpParse, err)
 		}
 		payloadErr := domain.ToPayload(err, "ds_search")
-		if !strings.Contains(payloadErr.UpstreamMsg, "已截断") {
-			t.Fatalf("UpstreamMsg = %q, 应含「已截断」", payloadErr.UpstreamMsg)
+		if !strings.Contains(payloadErr.UpstreamMsg, "超过") {
+			t.Fatalf("UpstreamMsg = %q, 应含「超过」", payloadErr.UpstreamMsg)
+		}
+	})
+
+	t.Run("非200超上限按状态码归类", func(t *testing.T) {
+		payload := exactJSON(t, 64)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeBody(t, w, payload)
+		}))
+		defer srv.Close()
+
+		client := newTestClient(srv.URL, func(c *Config) { c.MaxResponseBytes = int64(len(payload) - 1) })
+		_, err := client.Search(context.Background(), domain.SearchRequest{Query: "q"})
+		if got := domain.CodeOf(err); got != domain.CodeUpServer {
+			t.Fatalf("Code = %d, want %d（err=%v）", got, domain.CodeUpServer, err)
 		}
 	})
 
@@ -387,7 +402,7 @@ func assertNetworkCause(t *testing.T, err error, cause string) {
 		t.Fatalf("Code = %d, want %d（err=%v）", got, domain.CodeUpNetwork, err)
 	}
 	if !domain.IsRetryable(err) {
-		t.Fatal("2998 必须可重试（ADR-016）")
+		t.Fatal("2998 必须可重试")
 	}
 	details := domain.ToPayload(err, "ds_search").Details
 	if details["cause"] != cause {

@@ -1,5 +1,5 @@
 // 文件名: schema.go
-// 用途: 定义 ds_search 与 ds_fetch 的 InputSchema JSON 字面量（机器真源）。
+// 用途: 定义 ds_search / ds_fetch / ds_research / ds_extract 的 InputSchema JSON 字面量（机器真源）。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>

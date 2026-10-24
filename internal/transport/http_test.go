@@ -1,5 +1,5 @@
 // 文件名: http_test.go
-// 用途: 覆盖协议契约 P1~P26 中随 HTTP 传输与中间件链生效的断言（P17 在 stdio_test.go）。
+// 用途: 覆盖协议断言 P1~P26 中随 HTTP 传输与中间件链生效的断言（P17 在 stdio_test.go）。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -475,7 +475,7 @@ func (f fakeCacheStats) Stats() (entries int, bytes int64, degraded bool) {
 	return f.entries, f.bytes, f.degraded
 }
 
-// TestHealthzCacheStats 锁住 Contract 15 §七之三 的 cache 三字段：
+// TestHealthzCacheStats 锁住 /healthz 的 cache 三字段：
 // 它们 MUST 来自注入的统计源，不能是恒零的占位值（degraded 恒 false 会掩盖缓存降级）。
 func TestHealthzCacheStats(t *testing.T) {
 	t.Parallel()
@@ -653,7 +653,7 @@ func TestDisableLocalhostProtection(t *testing.T) {
 	}
 }
 
-// TestAdmission 验证入口并发闸门（ADR-019）：槽位占满时立即 429 + 3094，不排队。
+// TestAdmission 验证入口并发闸门：槽位占满时立即 429 + 3094，不排队。
 func TestAdmission(t *testing.T) {
 	t.Parallel()
 
@@ -707,6 +707,21 @@ func TestAdmission(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "3094") {
 		t.Fatalf("body 不含 3094: %s", body)
+	}
+}
+
+func TestPathGuardRejectsUnknownPath(t *testing.T) {
+	cfg := testConfig()
+	ts := newTestServer(t, cfg)
+
+	body := modernCallBody(31, "tools/list", "")
+	bad := doRequest(t, ts, http.MethodPost, "/not-mcp", modernHeaders("tools/list", ""), body)
+	if bad.Status != http.StatusNotFound {
+		t.Fatalf("未知路径 = %d, want 404", bad.Status)
+	}
+	good := doRequest(t, ts, http.MethodPost, "/mcp", modernHeaders("tools/list", ""), body)
+	if good.Status == http.StatusNotFound {
+		t.Fatalf("配置路径 /mcp 被误拦: %s", good.Body)
 	}
 }
 

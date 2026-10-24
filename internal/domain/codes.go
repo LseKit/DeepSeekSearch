@@ -1,5 +1,5 @@
 // 文件名: codes.go
-// 用途: 定义 41 个错误码常量与 CodeRegistry 静态元信息表。
+// 用途: 定义 42 个错误码常量与 CodeRegistry 静态元信息表。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -49,7 +49,7 @@ const (
 	CodeUpParse          = 2999
 )
 
-// 3xxx 是本地资源/状态错误，从 3000 起、主段步长 10；3041/3075/3091~3093 是紧邻细分码，3099 是兜底哨兵。
+// 3xxx 是本地资源/状态错误，从 3000 起、主段步长 10；3041/3075/3091~3094 是紧邻细分码，3099 是兜底哨兵。
 const (
 	CodeLocQueueTimeout        = 3000
 	CodeLocRetryBudget         = 3010
@@ -70,7 +70,7 @@ const (
 	CodeLocInternal            = 3099
 )
 
-// CodeRegistry 是全部 41 个错误码的静态元信息表，ds://error-codes 由它生成。
+// CodeRegistry 是全部 42 个错误码的静态元信息表，ds://error-codes 由它生成。
 //
 // 1080 是软错误（只写 warnings[]，永不作为 code 返回），但它仍是 warnings 文案的
 // 唯一来源，所以 MUST 留在表内；否则 Resource 会少一行、常量数也会与表长度不等。
@@ -306,7 +306,7 @@ var CodeRegistry = map[int]CodeInfo{
 	3092: {
 		Name:      "LOC_HTTP_EXPOSED_NO_AUTH",
 		Message:   "服务对外暴露但未启用鉴权（启动警告，不阻断）",
-		Hint:      "任何能连上该端口的人都能调用并计费；需要鉴权时设 auth_enabled=true 并提供 token，或只监听回环地址。见 ADR-018。",
+		Hint:      "任何能连上该端口的人都能调用并计费；需要鉴权时设 auth_enabled=true 并提供 token，或只监听回环地址。",
 		Retryable: false,
 	},
 	3094: {

@@ -21,12 +21,6 @@ import (
 
 var requestIDRe = regexp.MustCompile(`\(request_id:\s*([0-9a-fA-F-]{8,64})\)`)
 
-// 401 的 message 会回显 Key 后 4 位；落盘/返回前整体替换。
-var (
-	secretKVRe = regexp.MustCompile(`(?i)(api[_ ]?key|token|secret|authorization)\s*[:=]?\s*\S*`)
-	secretSkRe = regexp.MustCompile(`sk-[A-Za-z0-9]{8,}`)
-)
-
 // upstreamError 是上游错误信封。Param 必须可缺省（实测恒不存在）。
 // Code/Type 只保留原文供排查，MUST NOT 参与错误分类。
 type upstreamError struct {
@@ -39,7 +33,7 @@ type upstreamError struct {
 }
 
 // parseUpstreamError 只按 HTTP status 映射错误码；tool 参数留给调用方做 hint 分流。
-func parseUpstreamError(status int, raw []byte, tool string) *domain.UpstreamError { //nolint:unparam // 签名由 Task-05 A-02 固定，hint 分流在 domain.ToPayload
+func parseUpstreamError(status int, raw []byte, tool string) *domain.UpstreamError { //nolint:unparam // tool 参数保留，错误提示在 domain.ToPayload 分流
 	var env upstreamError
 	if err := json.Unmarshal(raw, &env); err != nil {
 		env = upstreamError{}
@@ -52,7 +46,7 @@ func parseUpstreamError(status int, raw []byte, tool string) *domain.UpstreamErr
 			UpstreamMsg: fmt.Sprintf("响应体 %d 字节缺少 error 信封", len(raw)),
 		}
 	}
-	message := clipRunes(scrubSecrets(env.Error.Message), 512)
+	message := clipRunes(domain.RedactSecrets(env.Error.Message), 512)
 	return &domain.UpstreamError{
 		Code:         codeForStatus(status),
 		HttpStatus:   status,
@@ -74,12 +68,6 @@ func extractRequestID(message string) string {
 	return ""
 }
 
-// scrubSecrets 先整体抹掉键值片段，再处理独立的 sk- 形态串。
-func scrubSecrets(message string) string {
-	message = secretKVRe.ReplaceAllString(message, "[REDACTED]")
-	return secretSkRe.ReplaceAllString(message, "sk-***")
-}
-
 func clipRunes(s string, limit int) string {
 	runes := []rune(s)
 	if len(runes) <= limit {
@@ -88,15 +76,22 @@ func clipRunes(s string, limit int) string {
 	return string(runes[:limit])
 }
 
-func newResponseTooLargeError(status int, maxBytes int64) *domain.UpstreamError {
+func newResponseTooLargeError(status int, raw []byte, maxBytes int64) *domain.UpstreamError {
+	if status != http.StatusOK {
+		up := parseUpstreamError(status, raw, "")
+		if up.UpstreamMsg == "" {
+			up.UpstreamMsg = fmt.Sprintf("响应体超过 %d 字节上限", maxBytes)
+		}
+		return up
+	}
 	return &domain.UpstreamError{
 		Code:        domain.CodeUpParse,
 		HttpStatus:  status,
-		UpstreamMsg: fmt.Sprintf("响应体超过 %d 字节上限，已截断", maxBytes),
+		UpstreamMsg: fmt.Sprintf("响应体超过 %d 字节上限", maxBytes),
 	}
 }
 
-// classifyNetErr 把拿不到响应的失败归到 14 号 §2.2 的五个 cause 之一。
+// classifyNetErr 把拿不到响应的失败归到五个 cause 之一。
 func classifyNetErr(ctx context.Context, err error) string {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return "attempt_timeout"

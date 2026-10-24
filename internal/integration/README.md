@@ -14,7 +14,7 @@ make test-integration
 - Key 只从部署根 `Config/.env` 的 `DEEPSEEK_API_KEY` 读取；读不到时全部 `t.Skip`。
 - 每个用例都能单独 `-run TestXxx` 运行。
 - 单轮总上游调用 ≤ **10** 次（`e2e_integration_test.go` 的 `maxUpstreamCalls`）。
-- 文件首行 MUST 是 `//go:build integration`；漏掉会让默认 `go test ./...` 产生计费调用（铁律 T1）。
+- 文件头之后、`package` 之前 MUST 有 `//go:build integration`；漏掉会让默认 `go test ./...` 产生计费调用（铁律 T1）。
 
 ## 用例
 

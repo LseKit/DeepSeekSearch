@@ -19,6 +19,22 @@ func mkResult(score float64, title, rawURL, site string) SearchResult {
 	return r
 }
 
+func TestDedupeKeepsEmptyTitlesApart(t *testing.T) {
+	t.Parallel()
+
+	items := []SearchResult{
+		mkResult(2.0, "", "https://a.example.com/1", ""),
+		mkResult(1.0, "", "https://b.example.com/2", ""),
+	}
+	kept, stats := Dedupe(items, 0, nil)
+	if len(kept) != 2 {
+		t.Fatalf("kept = %d, want 2（空标题不应被当成转载）", len(kept))
+	}
+	if stats.DroppedRepost != 0 {
+		t.Fatalf("DroppedRepost = %d, want 0", stats.DroppedRepost)
+	}
+}
+
 func TestDedupe(t *testing.T) {
 	t.Parallel()
 

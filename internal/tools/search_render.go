@@ -148,10 +148,10 @@ func (h *searchHandler) renderItem(item *domain.SearchResult, now time.Time) sea
 		out.Snippet = wrapUntrustedPtr(item.Url, item.Snippet)
 	case "summary":
 		out.Snippet = wrapUntrustedPtr(item.Url, item.Snippet)
-		out.Summary = wrapUntrustedPtr(item.Url, truncateSummary(item.Summary, h.summaryChars()))
+		out.Summary = wrapUntrustedPtr(item.Url, domain.TruncateRunes(item.Summary, h.summaryChars()))
 	case "content":
 		out.Snippet = wrapUntrustedPtr(item.Url, item.Snippet)
-		out.Summary = wrapUntrustedPtr(item.Url, truncateSummary(item.Summary, h.summaryChars()))
+		out.Summary = wrapUntrustedPtr(item.Url, domain.TruncateRunes(item.Summary, h.summaryChars()))
 		out.Content = wrapUntrustedPtr(item.Url, item.Content)
 	}
 	return out
@@ -160,14 +160,6 @@ func (h *searchHandler) renderItem(item *domain.SearchResult, now time.Time) sea
 func wrapUntrustedPtr(source, body string) *string {
 	wrapped := domain.WrapUntrusted(source, body)
 	return &wrapped
-}
-
-func truncateSummary(summary string, limit int) string {
-	if limit <= 0 {
-		return summary
-	}
-	truncated, _ := domain.SliceByRune(summary, 0, limit)
-	return truncated
 }
 
 func (h *searchHandler) summaryChars() int {
@@ -212,14 +204,50 @@ func truncateResults(items []searchOutputItem, limit int) ([]searchOutputItem, b
 	kept := make([]searchOutputItem, 0, len(items))
 	used := 0
 	for i := range items {
+		remaining := limit - used
+		if remaining <= 0 {
+			return kept, true
+		}
 		cost := resultCost(&items[i])
-		if len(kept) > 0 && used+cost > limit {
+		if cost > remaining {
+			fitItem(&items[i], remaining)
+			kept = append(kept, items[i])
 			return kept, true
 		}
 		kept = append(kept, items[i])
 		used += cost
 	}
 	return kept, false
+}
+
+// fitItem 把单条结果压进 limit：先保元数据与 snippet/summary，最后用剩余预算截 content。
+// 截断 untrusted 包裹时保留首尾标签，避免调用方拿到不闭合的定界符。
+func fitItem(item *searchOutputItem, limit int) bool {
+	cost := resultCost(item)
+	if cost <= limit {
+		return false
+	}
+	truncated := false
+	for _, field := range []**string{&item.Snippet, &item.Summary, &item.Content} {
+		if *field == nil {
+			continue
+		}
+		fieldCost := utf8.RuneCountInString(**field)
+		without := cost - fieldCost
+		avail := limit - without
+		if avail <= 0 {
+			*field = nil
+			cost = without
+			truncated = true
+			continue
+		}
+		if fieldCost > avail {
+			**field = domain.TruncateUntrusted(**field, avail)
+			cost = without + utf8.RuneCountInString(**field)
+			truncated = true
+		}
+	}
+	return truncated
 }
 
 func resultCost(item *searchOutputItem) int {

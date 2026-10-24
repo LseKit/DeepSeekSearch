@@ -6,7 +6,10 @@
 
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRedactURL(t *testing.T) {
 	t.Parallel()
@@ -108,6 +111,35 @@ func TestRedactURL(t *testing.T) {
 
 			if got := RedactURL(tt.raw, tt.keys); got != tt.want {
 				t.Errorf("RedactURL(%q) = %q, want %q", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRedactSecrets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "键值形态整段替换", in: "Authentication Fails, Your api key: ****0000 is invalid", want: "Authentication Fails, Your [REDACTED] is invalid"},
+		{name: "独立sk串替换", in: "rejected sk-abcdefghijkl", want: "rejected sk-***"},
+		{name: "无敏感内容原样", in: "上游返回 404", want: "上游返回 404"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := RedactSecrets(tt.in)
+			if got != tt.want {
+				t.Fatalf("RedactSecrets(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+			if strings.Contains(got, "0000") || strings.Contains(got, "sk-abcdefghijkl") {
+				t.Fatalf("RedactSecrets 仍含凭据: %q", got)
+			}
+			if again := RedactSecrets(got); again != got {
+				t.Fatalf("RedactSecrets 非幂等: first=%q again=%q", got, again)
 			}
 		})
 	}

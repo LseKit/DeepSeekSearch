@@ -323,7 +323,7 @@ func TestReadLeaseStateAndTryPreemptErrors(t *testing.T) {
 func TestWaitCallBranches(t *testing.T) {
 	t.Parallel()
 
-	s := &singleflight{}
+	s := &singleflight{clk: newFakeClock(time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC))}
 	current := &call{done: make(chan struct{})}
 
 	canceled, cancel := context.WithCancel(context.Background())
@@ -339,7 +339,7 @@ func TestWaitCallBranches(t *testing.T) {
 func TestWaitNextPollBranches(t *testing.T) {
 	t.Parallel()
 
-	s := &singleflight{pollInterval: time.Millisecond}
+	s := &singleflight{pollInterval: time.Millisecond, clk: resilience.SystemClock()}
 	current := &call{}
 	if !s.waitNextPoll(context.Background(), time.Now().Add(-time.Second), 10, "k", current) {
 		t.Fatal("超过截止时间应结束")

@@ -16,7 +16,7 @@ func mustLoadCST8() *time.Location {
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
 		// 容器缺 tzdata 时会在包初始化期失败。这是不可恢复的部署错误，
-		// 必须在任何请求前暴露，因此这里允许 panic（20 号 §G6 的例外）。
+		// 必须在任何请求前暴露，因此这里允许 panic（这是禁止 panic 规则的例外）。
 		panic("domain: 无法加载 Asia/Shanghai 时区，请安装 tzdata: " + err.Error())
 	}
 	return loc

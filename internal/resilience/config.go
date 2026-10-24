@@ -1,5 +1,5 @@
 // 文件名: config.go
-// 用途: 定义 resilience 层的窄配置，由 Task-12 从全局 config.Config 映射。
+// 用途: 定义 resilience 层的窄配置，由装配层从全局 config.Config 映射。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>
@@ -43,8 +43,8 @@ type Config struct {
 
 // cacheLogger 是注入给缓存层的窄日志接口。
 //
-// resilience 不允许 import internal/logging（10 号 §2.5），因此用接口接收
-// *slog.Logger；事件名仍以 Task-04 A-02 为唯一真源。
+// resilience 不允许 import internal/logging，因此用接口接收
+// *slog.Logger；事件名由 domain/events.go 定义。
 type cacheLogger interface {
 	Warn(msg string, args ...any)
 	Info(msg string, args ...any)

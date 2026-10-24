@@ -9,7 +9,7 @@ package deepseek
 import "github.com/LseKit/DeepSeekSearch/internal/domain"
 
 // searchRequest 是 POST /v1/tools/search 的请求体。
-// 字段顺序与 12 号 §1.1 一致；MUST NOT 用 map，防止拼错键名被上游静默忽略。
+// 字段顺序固定；MUST NOT 用 map，防止拼错键名被上游静默忽略。
 type searchRequest struct {
 	Query        string  `json:"query"`
 	Count        *int    `json:"count,omitempty"`

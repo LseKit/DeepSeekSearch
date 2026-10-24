@@ -52,6 +52,9 @@ func TestSSRF(t *testing.T) {
 		{name: "IPv4映射IPv6十六进制", url: "http://[::ffff:7f00:1]/", wantCode: domain.CodeValSSRFBlocked},
 		{name: "IPv6回环", url: "http://[::1]/", wantCode: domain.CodeValSSRFBlocked},
 		{name: "全零地址", url: "http://0.0.0.0/", wantCode: domain.CodeValSSRFBlocked},
+		{name: "IPv6未指定地址", url: "http://[::]/", wantCode: domain.CodeValSSRFBlocked},
+		{name: "IANA保留段", url: "http://192.0.0.1/", wantCode: domain.CodeValSSRFBlocked},
+		{name: "基准测试保留段", url: "http://198.18.0.1/", wantCode: domain.CodeValSSRFBlocked},
 		{name: "CGNAT", url: "http://100.64.0.1/", wantCode: domain.CodeValSSRFBlocked},
 		{name: "私网10", url: "http://10.1.2.3/", wantCode: domain.CodeValSSRFBlocked},
 		{name: "私网172", url: "http://172.16.0.1/", wantCode: domain.CodeValSSRFBlocked},
@@ -185,17 +188,17 @@ func TestSnapshotID(t *testing.T) {
 	t.Parallel()
 
 	at := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
-	id := snapshotID("https://example.com/a", at)
+	id := domain.SnapshotID("https://example.com/a", at)
 	if !regexp.MustCompile(`^snap_[0-9a-f]{16}$`).MatchString(id) {
 		t.Fatalf("snapshotID = %q", id)
 	}
-	if same := snapshotID("https://example.com/a", at); same != id {
+	if same := domain.SnapshotID("https://example.com/a", at); same != id {
 		t.Fatalf("同一输入生成不同 ID: %q vs %q", id, same)
 	}
-	if other := snapshotID("https://example.com/b", at); other == id {
+	if other := domain.SnapshotID("https://example.com/b", at); other == id {
 		t.Fatal("不同 URL 不应生成同一 ID")
 	}
-	if other := snapshotID("https://example.com/a", at.Add(time.Second)); other == id {
+	if other := domain.SnapshotID("https://example.com/a", at.Add(time.Second)); other == id {
 		t.Fatal("不同抓取时间不应生成同一 ID")
 	}
 }

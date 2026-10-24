@@ -61,6 +61,30 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestNew_RedactsUpstreamMsg(t *testing.T) {
+	t.Parallel()
+
+	clk := newFakeClock(time.Date(2026, 10, 20, 12, 0, 0, 0, testTZ))
+	cfg := testConfig(t, clk)
+	cfg.AlsoStderr = false
+	logger, closer := newLogger(t, cfg)
+
+	logger.Info(domain.EvErr, "upstream_msg",
+		"Authentication Fails, Your api key: ****0000 is invalid")
+	if err := closer.Close(); err != nil {
+		t.Fatalf("Close() = %v", err)
+	}
+
+	record := parseJSONRecord(t, onlyLogContent(t, cfg.Dir))
+	msg, ok := record["upstream_msg"].(string)
+	if !ok {
+		t.Fatalf("upstream_msg 字段缺失或类型错误: %#v", record["upstream_msg"])
+	}
+	if strings.Contains(msg, "0000") || !strings.Contains(msg, "[REDACTED]") {
+		t.Fatalf("upstream_msg 未二次脱敏: %q", msg)
+	}
+}
+
 func TestNew_NoStdout(t *testing.T) {
 	oldStdout := os.Stdout
 	reader, writer, err := os.Pipe()

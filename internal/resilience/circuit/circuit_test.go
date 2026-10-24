@@ -83,6 +83,31 @@ func TestCircuit(t *testing.T) {
 		}
 	})
 
+	t.Run("half_open超时回open而非永久卡死", func(t *testing.T) {
+		t.Parallel()
+		clk := newFakeClock(limiterNow)
+		c := newTestCircuit(clk, nil)
+		for i := 0; i < 5; i++ {
+			c.Record("search", failErr)
+		}
+		clk.Advance(15 * time.Second)
+		if err := c.Allow("search"); err != nil {
+			t.Fatalf("探测 1 = %v", err)
+		}
+		if err := c.Allow("search"); err != nil {
+			t.Fatalf("探测 2 = %v", err)
+		}
+		// 两个探测名额被消费但没有任何 Record：超过一个 open 窗口后应重新 open。
+		clk.Advance(15 * time.Second)
+		if got := c.State("search"); got != stateOpen {
+			t.Fatalf("State = %q, want open", got)
+		}
+		clk.Advance(15 * time.Second)
+		if err := c.Allow("search"); err != nil {
+			t.Fatalf("重新进入 half-open 后 Allow() = %v", err)
+		}
+	})
+
 	t.Run("half_open全成功closed", func(t *testing.T) {
 		t.Parallel()
 		clk := newFakeClock(limiterNow)

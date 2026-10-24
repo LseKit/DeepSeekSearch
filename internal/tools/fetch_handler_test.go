@@ -115,7 +115,7 @@ func TestHandleFetch(t *testing.T) {
 		deps, _ := newTestDeps(t, fetchFixture("T", strings.Repeat("a", 600)), nil)
 		res := invokeFetch(t, &deps, &fetchInput{URL: strPtr("https://example.com/w")})
 		if raw := resultText(t, res); !strings.Contains(raw, `"warnings":[]`) {
-			t.Fatalf("warnings 为空时 MUST 序列化为 []（12 号 §4.1），实际: %s", raw)
+			t.Fatalf("warnings 为空时 MUST 序列化为 []，实际: %s", raw)
 		}
 	})
 
@@ -165,6 +165,12 @@ func TestHandleFetch(t *testing.T) {
 		}))
 		if payload.Code != domain.CodeValSectionNotFound {
 			t.Fatalf("code = %d, want 1090", payload.Code)
+		}
+		if payload.Details["field"] != "section" || payload.Details["detail"] != "not_in_toc" {
+			t.Fatalf("details = %#v, want field=section detail=not_in_toc", payload.Details)
+		}
+		if payload.Details["section"] != "s99" {
+			t.Fatalf("details.section = %v, want s99", payload.Details["section"])
 		}
 	})
 

@@ -25,10 +25,12 @@ import (
 const (
 	shutdownTimeout   = 15 * time.Second
 	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	idleTimeout       = 120 * time.Second
 )
 
 // httpHandler 用无状态 Streamable HTTP 提供 MCP。
-// 恒为无状态（ADR-003）：2026-07-28 只在无状态形态下可用，
+// 恒为无状态：2026-07-28 只在无状态形态下可用，
 // legacy 2024-11-05 ~ 2025-11-25 同样走这条路径，单档即超集。
 type httpHandler struct {
 	cfg       config.Config
@@ -58,6 +60,8 @@ func (h *httpHandler) Serve(ctx context.Context, srv *mcp.Server) error {
 	httpSrv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 
 	// config_sha256 由装配层经 logger.With 注入，这条日志自动带上它。
@@ -98,7 +102,7 @@ func newHTTPHandler(cfg *config.Config, build domain.BuildInfo, log *slog.Logger
 			Stateless:    true,
 			JSONResponse: cfg.Server.Http.JsonResponse,
 			// SDK 默认在「本连接来自回环地址且 Host 非回环」时 403，反代到回环监听必然命中；
-			// 该键在 13 号 §三 已登记为危险开关，不接给 SDK 就是假开关。
+			// 该键是危险开关，不接给 SDK 就是假开关。
 			DisableLocalhostProtection: cfg.Server.Http.DisableLocalhostProtection,
 		},
 	)

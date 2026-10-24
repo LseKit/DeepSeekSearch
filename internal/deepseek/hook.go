@@ -11,7 +11,7 @@ import "context"
 // ExchangeHook 在每次上游往返结束后调用；resp 为 nil 表示没有拿到响应体。
 //
 // 走 ctx 而不是 Config 全局回调：全局回调拿不到 handler 的 call_id，
-// 记出来的报文无法与 call.begin/call.end 对齐（DEBT-009 的原问题）。
+// 记出来的报文无法与 call.begin/call.end 对齐。
 type ExchangeHook func(ctx context.Context, req, resp []byte)
 
 type exchangeHookKey struct{}

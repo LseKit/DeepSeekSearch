@@ -29,19 +29,19 @@ type Handler interface {
 }
 
 // CacheStats 是 /healthz 的缓存统计来源。
-// 接口定义在 transport 而不是直接接收 resilience.Cache：10 号依赖矩阵只允许
-// transport 依赖 domain/config/logging，由装配层把具体实现注进来即可。
+// 接口定义在 transport 而不是直接接收 resilience.Cache：transport 只依赖
+// domain/config/logging，由装配层把具体实现注进来即可。
 type CacheStats interface {
 	Stats() (entries int, bytes int64, degraded bool)
 }
 
 // Build 按名字构造 Handler。名字未知时返回错误，MUST NOT panic。
-func Build(name string, cfg config.Config, build domain.BuildInfo, logger *slog.Logger) (Handler, error) { //nolint:gocritic // 签名由 11 号 §六 固定
+func Build(name string, cfg config.Config, build domain.BuildInfo, logger *slog.Logger) (Handler, error) { //nolint:gocritic // 签名与传输装配接口保持一致
 	return BuildWithCache(name, cfg, build, logger, nil)
 }
 
 // BuildWithCache 与 Build 相同，并把缓存统计注入 /healthz；cache 为 nil 时字段保持零值。
-// 另开函数而不是改 Build：Build 的签名是 11 号 §六 的冻结契约，新增函数不破坏既有调用方。
+// 另开函数而不是改 Build：Build 的签名被外部调用方依赖，新增函数不破坏既有调用方。
 func BuildWithCache(name string, cfg config.Config, build domain.BuildInfo, logger *slog.Logger, //nolint:gocritic // 与 Build 同口径，cfg 按值传入
 	cache CacheStats) (Handler, error) {
 	switch name {

@@ -1,5 +1,5 @@
 // 文件名: version_test.go
-// 用途: 覆盖 EffectiveVersion 的注入优先/兜底生效/全空三条断言（Contract/17 §八 V5/V6/V7）。
+// 用途: 覆盖 EffectiveVersion 的注入优先/兜底生效/全空三条断言。
 // 创建日期: 2026-10-20
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>

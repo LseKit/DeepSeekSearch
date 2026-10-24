@@ -29,7 +29,7 @@ type retrier struct {
 
 // NewRetry 构造重试策略。重试预算计数属于实例内部，
 // 调用方 MUST 为 search/fetch 各建一个实例以隔离预算。
-func NewRetry(cfg resilience.Config, clk resilience.Clock, rnd RandSource) resilience.Retry { //nolint:gocritic // 签名由 11 号 §四 固定
+func NewRetry(cfg resilience.Config, clk resilience.Clock, rnd RandSource) resilience.Retry { //nolint:gocritic // 签名与 resilience 接口保持一致
 	if clk == nil {
 		clk = resilience.SystemClock()
 	}

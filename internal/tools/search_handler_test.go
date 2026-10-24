@@ -511,7 +511,7 @@ func TestHandleSearch(t *testing.T) {
 		deps, _ := newTestDeps(t, client, nil)
 		res := invokeSearch(t, &deps, &searchInput{Query: "q"})
 		if got := resultText(t, res); !strings.Contains(got, `"warnings":[]`) {
-			t.Fatalf("warnings 为空时 MUST 序列化为 []（12 号 §4.1），实际: %s", got)
+			t.Fatalf("warnings 为空时 MUST 序列化为 []，实际: %s", got)
 		}
 	})
 

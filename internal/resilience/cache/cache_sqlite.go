@@ -13,12 +13,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/LseKit/DeepSeekSearch/internal/domain"
 	"github.com/LseKit/DeepSeekSearch/internal/resilience"
-	_ "modernc.org/sqlite" // 纯 Go SQLite 驱动，无 CGO（ADR-006）
+	_ "modernc.org/sqlite" // 纯 Go SQLite 驱动，无 CGO
 )
 
 // logger 是缓存层使用的窄日志接口；配置由 resilience.Config.Logger 注入。
@@ -34,7 +36,7 @@ const (
 
 var errCacheClosed = errors.New("cache is closed")
 
-// 建表 SQL 与 ADR-006 §表结构逐字一致；inflight 额外含 last_error_code 列（见该 ADR 修订说明）。
+// 建表 SQL 固定；inflight 额外含 last_error_code 列。
 const (
 	cacheTableSQL = `CREATE TABLE IF NOT EXISTS cache (
     capture_id TEXT PRIMARY KEY,
@@ -83,7 +85,7 @@ type sqliteCache struct {
 //
 // 目录不存在时创建；打开或建表失败返回 error，由调用方决定降级还是拒绝启动。
 // 缓存是「省钱」不是「功能」：运行期的任何 DB 错误只记 degraded，不代表工具失败。
-func NewSqliteCache(cfg resilience.Config) (resilience.Cache, error) { //nolint:gocritic // 签名由 11 号 §四 固定
+func NewSqliteCache(cfg resilience.Config) (resilience.Cache, error) { //nolint:gocritic // 签名与 resilience 接口保持一致
 	withCacheDefaults(&cfg)
 	if cfg.Clock == nil {
 		cfg.Clock = resilience.SystemClock()
@@ -91,7 +93,7 @@ func NewSqliteCache(cfg resilience.Config) (resilience.Cache, error) { //nolint:
 	if err := ensureCacheDir(cfg.CacheDbPath); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", cfg.CacheDbPath)
+	db, err := sql.Open("sqlite", cacheDSN(cfg.CacheDbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open cache db: %w", err)
 	}
@@ -121,8 +123,28 @@ func NewSqliteCache(cfg resilience.Config) (resilience.Cache, error) { //nolint:
 	}
 	c.approxEntries.Store(int64(entries))
 	c.approxBytes.Store(nbytes)
+	// 启动时同步清一次，避免上次进程异常退出留下的过期条目继续占空间。
+	// 放在构造函数里而不是 pruneLoop 里，避免与首次 Get/Prune 并发导致命中统计重复落盘。
+	if c.cfg.CachePruneIntervalS > 0 {
+		if _, err := c.Prune(initCtx); err != nil {
+			c.logWarn(domain.EvWarnCacheDegraded, "stage", "startup_prune", "err", err.Error())
+		}
+	}
 	c.startPrune()
 	return c, nil
+}
+
+// cacheDSN 把 busy_timeout/synchronous 写进每个新连接的 DSN。
+// 只在 initCacheDB 里 Exec PRAGMA 只影响池中当时那一条连接。
+func cacheDSN(path string) string {
+	if path == ":memory:" {
+		return path
+	}
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	return path + sep + "_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
 }
 
 func joinClose(err error, db *sql.DB) error {

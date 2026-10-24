@@ -1,5 +1,5 @@
 // 文件名: e2e_integration_test.go
-// 用途: L3b 真实上游端到端（计费）。首行 build tag 保证默认 go test 不会编译到这里。
+// 用途: L3b 真实上游端到端（计费）。build tag 在文件头之后、package 之前，默认 go test 不会编译到这里。
 // 创建日期: 2026-10-21
 // 作者: 小逸
 // 项目: DeepSeekSearch <https://github.com/LseKit/DeepSeekSearch>

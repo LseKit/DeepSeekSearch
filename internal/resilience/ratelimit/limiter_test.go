@@ -113,6 +113,49 @@ func TestLimiter(t *testing.T) {
 		l.Release("search")
 	})
 
+	t.Run("在飞满时归还令牌", func(t *testing.T) {
+		clk := newFakeClock(limiterNow)
+		spec := map[string]BucketSpec{
+			"search": {Rps: 1, Burst: 1},
+			"fetch":  {Rps: 1, Burst: 1},
+		}
+		l := mustLimiter(t, clk, spec, 3, 0.1, 5*time.Second)
+		ctx := context.Background()
+
+		if err := l.Wait(ctx, "fetch"); err != nil {
+			t.Fatalf("第一个 Wait() = %v", err)
+		}
+		second := make(chan error, 1)
+		go func() { second <- l.Wait(ctx, "fetch") }()
+		clk.WaitTimer(t)
+		clk.Advance(time.Second)
+		if err := <-second; err != nil {
+			t.Fatalf("第二个 Wait() = %v", err)
+		}
+
+		third := make(chan error, 1)
+		go func() { third <- l.Wait(ctx, "fetch") }()
+		clk.WaitTimer(t)
+		clk.Advance(time.Second)
+		// 第三个已拿到令牌但 inflight 满；它必须归还令牌后等待，而不是继续占着。
+		clk.WaitTimer(t)
+		lim, ok := l.(*limiter)
+		if !ok {
+			t.Fatalf("限流器类型 = %T", l)
+		}
+		diag := lim.Diagnostics("fetch")
+		if diag.Stage != "inflight" {
+			t.Fatalf("第三等待者 Stage = %q, want inflight（令牌未归还）", diag.Stage)
+		}
+
+		l.Release("fetch")
+		if err := <-third; err != nil {
+			t.Fatalf("释放名额后第三个 Wait() = %v", err)
+		}
+		l.Release("fetch")
+		l.Release("fetch")
+	})
+
 	t.Run("在飞配额释放后通过", func(t *testing.T) {
 		spec := map[string]BucketSpec{
 			"search": {Rps: 1000, Burst: 10},

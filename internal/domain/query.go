@@ -33,12 +33,12 @@ type SearchRequest struct {
 	Localization string  `json:"localization,omitempty"`
 }
 
-// BuildQuery 按 12 号 §4.1 的优先级把结构化字段拼成上游 query。
+// BuildQuery 按字段优先级把结构化字段拼成上游 query。
 //
 // rawQuery 为 true 时原样返回 req.Query，MUST NOT 追加任何操作符；
 // query 本身 MUST 原样透传，不做任何转义或编码。超长只记 warning，
 // 由 Tools 层转成 1010 VAL_QUERY_TOO_LONG 拒绝。
-func BuildQuery(req SearchRequest) (effective string, warnings []string) { //nolint:gocritic // 契约签名，见 11 号 §一
+func BuildQuery(req SearchRequest) (effective string, warnings []string) { //nolint:gocritic // 签名与搜索查询接口保持一致
 	if req.RawQuery {
 		return withLengthWarning(req.Query, nil)
 	}
@@ -108,7 +108,7 @@ func appendAfter(b *strings.Builder, lower, after string, warnings []string) []s
 	}
 
 	// after:YYYY 在上游的真实语义是「晚于该年」，会把整年静默丢掉；
-	// 展开成 YYYY-01-01 才符合调用方直觉（12 号 §4.1.3）。
+	// 展开成 YYYY-01-01 才符合调用方直觉。
 	if isBareYear(after) {
 		expanded := after + "-01-01"
 		warnings = append(warnings, "after:"+after+" 已展开为 after:"+expanded)

@@ -26,7 +26,7 @@ type Coded interface {
 // UpstreamError 是上游返回的错误。它保留原始 HTTP 状态与上游消息，
 // 因为「上游说了什么」是排查的唯一线索。
 //
-// 它故意不实现 Coded：ToPayload MUST 从 HttpStatus 走 codeForStatus，
+// 它故意不实现 Coded：ToPayload 在 Code 为 0 时才按 HttpStatus 走 codeForStatus，
 // 否则 5xx 兜底与 status==0 的 2998 分支永远不会被触发。
 //
 // HttpStatus / RequestId 沿用契约里的拼写，不按 Go 缩写真正常改名：下游任务
@@ -34,16 +34,16 @@ type Coded interface {
 type UpstreamError struct {
 	Code         int    // 例如 2429
 	HttpStatus   int    //nolint:revive // 契约字段名，例如 429
-	RequestId    string //nolint:revive // 契约字段名，见 11 号 §3.1
+	RequestId    string //nolint:revive // 对外字段名固定为 RequestId
 	UpstreamMsg  string // 上游原文，可能含 Key 后 4 位，MUST NOT 进 Error()
-	UpstreamType string // 上游 error.type 原文，仅供日志排查（Task-05 §3 要求 2.1），MUST NOT 参与分类
+	UpstreamType string // 上游 error.type 原文，仅供日志排查，MUST NOT 参与分类
 	cause        error  // 底层网络错误，可为 nil
 	details      map[string]any
 }
 
 // Error 返回便于日志解析的固定格式，绝不包含 UpstreamMsg。
 //
-// 401 的 message 会回显 Key 后 4 位（14 号 §2.5.1），把它拼进来就等于
+// 401 的 message 会回显 Key 后 4 位，把它拼进来就等于
 // 把凭据片段写进每一条错误日志。
 func (e *UpstreamError) Error() string {
 	if e.RequestId == "" {
@@ -56,7 +56,7 @@ func (e *UpstreamError) Error() string {
 // Unwrap 暴露底层网络错误，供 errors.Is/As 继续下钻。
 func (e *UpstreamError) Unwrap() error { return e.cause }
 
-// UpstreamTypeOf 提取上游 error.type 原文，仅供日志排查（Task-05 §3 要求 2.1）。
+// UpstreamTypeOf 提取上游 error.type 原文，仅供日志排查。
 // MUST NOT 用它做错误分类：实测 401/404/429 的 type 都可能是 invalid_request_error。
 func UpstreamTypeOf(err error) string {
 	var ue *UpstreamError
@@ -113,7 +113,7 @@ func (e *LocalError) Code() int { return e.code }
 // 声明顺序即 JSON 输出顺序，是冻结契约：5 个必带字段在前（Retryable 的 false
 // 也必须出现），4 个条件字段在后且带 omitempty。
 //
-// UpstreamHttp / RequestId 的拼写来自 14 号 §三，改成正统缩写会让字段名与
+// UpstreamHttp / RequestId 的拼写与上游响应一致，改成正统缩写会让字段名与
 // 契约表不一致。
 type ErrorPayload struct {
 	Code         int            `json:"code"`
@@ -121,9 +121,9 @@ type ErrorPayload struct {
 	Message      string         `json:"message"`
 	Hint         string         `json:"hint"`
 	Retryable    bool           `json:"retryable"`
-	UpstreamHttp int            `json:"upstream_http,omitempty"` //nolint:revive // 14 号 §三冻结字段名
+	UpstreamHttp int            `json:"upstream_http,omitempty"` //nolint:revive // 对外字段名固定，保持与上游响应一致
 	UpstreamMsg  string         `json:"upstream_msg,omitempty"`
-	RequestId    string         `json:"request_id,omitempty"` //nolint:revive // 14 号 §三冻结字段名
+	RequestId    string         `json:"request_id,omitempty"` //nolint:revive // 对外字段名固定，保持与上游响应一致
 	Details      map[string]any `json:"details,omitempty"`
 }
 
@@ -182,15 +182,15 @@ func NewLocalError(code int, detail string, extra map[string]any) *LocalError {
 
 // hintUpNotFoundSearch 是 ds_search 的 2404 hint。
 // 搜索端点 404 与 fetch 的 404 语义完全不同：前者几乎总是 base_url 配错，
-// 让调用方去换 query 方向只会浪费一次往返（14 号 §2.3.1）。
-const hintUpNotFoundSearch = "搜索端点返回 404，通常是 [upstream].base_url 配置错误（不是查询无结果 —— 查询无结果会返回空列表而非错误）。请核对 base_url 是否以 /v1 结尾且拼写正确。"
+// 让调用方去换 query 方向只会浪费一次往返。
+const hintUpNotFoundSearch = "搜索端点返回 404，通常是 [upstream].base_url 配置错误（不是查询无结果 —— 查询无结果会返回空列表而非错误）。客户端会自动拼接 /v1/tools/search，base_url 只需写到域名或反向代理前缀，不要重复 /v1。"
 
 // ToPayload 把任意错误归类成统一的 9 字段错误体。
 //
 // tool 只影响 2404 的 hint：ds_search 的 404 是 base_url 配错，ds_fetch 的 404
-// 是取不到正文；空串与 ds_health 都按 ds_fetch 处理（11 号 §一）。
+// 是取不到正文；空串与 ds_health 都按 ds_fetch 处理。
 //
-// 判定顺序是契约（14 号 §1.3），先命中先返回，MUST NOT 调换：
+// 判定顺序是契约，先命中先返回，MUST NOT 调换：
 // Coded → UpstreamError → 网络错误 → 3099。
 // 第 3 步不能省：省了以后网络错误会落到第 4 步，被归成不可重试的 3099，
 // 于是「网络错误可重试」的承诺永远不生效。
@@ -208,11 +208,11 @@ func classifyPayload(err error) ErrorPayload {
 	if errors.As(err, &coded) {
 		p := payloadFor(coded.Code())
 		// 校验错误必须自报字段名：1000 的 message 是兜底文案，只说「参数不合法」，
-		// 四种不同错因会返回同一句话，排障只能靠猜（14 号 §3.0 的 details 原则）。
+		// 四种不同错因会返回同一句话，排障只能靠猜（details 必须给出具体字段）。
 		if details := validationDetails(err); len(details) > 0 {
 			p.Details = details
 		}
-		// Extra 的结构化数值 MUST 透传到 details（14 号 §3.0），
+		// Extra 的结构化数值 MUST 透传到 details，
 		// 否则调用方只能从中文字符串里猜 retry_after_ms。
 		var local *LocalError
 		if errors.As(err, &local) && len(local.extra) > 0 {

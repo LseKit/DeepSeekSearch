@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestSliceByRune(t *testing.T) {
@@ -94,7 +95,7 @@ func TestUnescapeCharacterClass(t *testing.T) {
 		'^', '\\',
 	}
 	if got, want := len(chars), 32; got != want {
-		t.Fatalf("字符类 = %d 个, want %d（ADR-013 实测全集）", got, want)
+		t.Fatalf("字符类 = %d 个, want %d（实测全集）", got, want)
 	}
 
 	for _, c := range chars {
@@ -133,6 +134,30 @@ func TestNormalizeTitle(t *testing.T) {
 				t.Errorf("NormalizeTitle(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTruncateRunes(t *testing.T) {
+	t.Parallel()
+
+	if got := TruncateRunes("中文abc", 2); got != "中文" {
+		t.Fatalf("TruncateRunes() = %q, want 中文", got)
+	}
+	if got := TruncateRunes("abc", 0); got != "abc" {
+		t.Fatalf("limit=0 应不截断，实际 %q", got)
+	}
+}
+
+func TestTruncateUntrusted(t *testing.T) {
+	t.Parallel()
+
+	wrapped := WrapUntrusted("https://example.com", strings.Repeat("正文", 100))
+	got := TruncateUntrusted(wrapped, 200)
+	if !strings.Contains(got, "<untrusted_content") || !strings.Contains(got, "</untrusted_content") {
+		t.Fatalf("截断破坏了定界符: %q", got)
+	}
+	if utf8.RuneCountInString(got) > 200 {
+		t.Fatalf("截断后 %d rune > 200", utf8.RuneCountInString(got))
 	}
 }
 

@@ -94,7 +94,7 @@ func TestToPayloadValidationDetails(t *testing.T) {
 	t.Parallel()
 
 	// 1000 的 message 是兜底文案，四种不同错因会返回同一句话；
-	// 只有 details.field 能让调用方知道该改哪个参数（14 号 §3.0）。
+	// 只有 details.field 能让调用方知道该改哪个参数。
 	p := ToPayload(NewValidationError(CodeValInvalidParam, "exact_phrase", "不能包含双引号"), "ds_search")
 	if p.Details["field"] != "exact_phrase" {
 		t.Errorf("Details.field = %v, want exact_phrase", p.Details["field"])

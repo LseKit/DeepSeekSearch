@@ -32,6 +32,7 @@ func newSF(t *testing.T, cache resilience.Cache, clk resilience.Clock, owner str
 		sf.owner = owner
 	}
 	sf.pollInterval = time.Millisecond
+	sf.pollAfter = time.After
 	return sf
 }
 
@@ -267,7 +268,7 @@ func TestSingleflight(t *testing.T) {
 				t.Fatalf("结果 = (%v, %v)", res.val, res.err)
 			}
 		}
-		// 三个结果共享同一底层数组；MUST NOT 原地修改（约定见 Do 文档）。
+		// 三个结果共享同一底层数组；MUST NOT 原地修改（约定见 Do 方法注释）。
 		if &first.val[0] != &second.val[0] || &first.val[0] != &third.val[0] {
 			t.Fatal("等待者未共享同一底层数组")
 		}
@@ -283,13 +284,29 @@ func TestSingleflight(t *testing.T) {
 			t.Fatalf("插入租约 = (%v, %v)", ok, err)
 		}
 		var calls atomic.Int64
-		start := time.Now()
-		_, _, err = sf.Do(context.Background(), key, 100,
-			func(context.Context) ([]byte, error) {
-				calls.Add(1)
-				return nil, nil
-			}, nil)
-		elapsed := time.Since(start)
+		result := make(chan error, 1)
+		go func() {
+			_, _, doErr := sf.Do(context.Background(), key, 100,
+				func(context.Context) ([]byte, error) {
+					calls.Add(1)
+					return nil, nil
+				}, nil)
+			result <- doErr
+		}()
+		// 等待方的截止时间取自注入的 FakeClock，必须推进时钟才会触发 3075。
+		timeout := time.After(2 * time.Second)
+		for {
+			select {
+			case err = <-result:
+			case <-timeout:
+				t.Fatal("FakeClock 推进后仍未返回 3075")
+			default:
+				clk.Advance(time.Millisecond)
+				time.Sleep(100 * time.Microsecond)
+				continue
+			}
+			break
+		}
 		if domain.CodeOf(err) != domain.CodeLocSingleflightTimeout {
 			t.Fatalf("错误码 = %d, want 3075", domain.CodeOf(err))
 		}
@@ -299,9 +316,6 @@ func TestSingleflight(t *testing.T) {
 		}
 		if calls.Load() != 0 {
 			t.Fatalf("超时不应执行 fn，实际 %d 次", calls.Load())
-		}
-		if elapsed < 100*time.Millisecond || elapsed > time.Second {
-			t.Fatalf("等待时长 = %v", elapsed)
 		}
 	})
 

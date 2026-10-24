@@ -171,12 +171,24 @@ func (l *limiter) Wait(ctx context.Context, key string) error {
 		keepToken = true
 		return nil
 	}
+
+	// 在飞名额已满：先归还令牌再排队。否则等待期间会一直占着速率配额，
+	// 等效于把 rps 悄悄调低。拿到在飞名额后重新预约令牌，保证最终仍受速率约束。
 	cancelToken()
 	remaining := deadline.Sub(l.clk.Now())
 	if remaining <= 0 {
 		return l.queueTimeout("inflight", depth, start)
 	}
-	return l.waitInflight(ctx, sem, remaining, depth, start)
+	if err := l.waitInflight(ctx, sem, remaining, depth, start); err != nil {
+		return err
+	}
+	tokenWait, cancelToken = bucket.reserve(l.clk.Now())
+	if err := l.waitToken(ctx, tokenWait, deadline, depth, start); err != nil {
+		<-sem
+		return err
+	}
+	keepToken = true
+	return nil
 }
 
 func (l *limiter) waitToken(ctx context.Context, tokenWait time.Duration, deadline time.Time, depth *atomic.Int32, start time.Time) error {

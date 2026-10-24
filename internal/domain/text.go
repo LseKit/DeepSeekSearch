@@ -13,11 +13,12 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
-// unescapeRe 覆盖实测的 32 种被转义字符（ADR-013）。
-// 字符类按 12 号 §6.1 的 32 字符全集构造：§6.2 的示例正则漏了 ' 与 +，
-// 按 §6.1 的频次表（\' 197 次、\+ 167 次）与 32 字符验收补回。
+// unescapeRe 覆盖实测的 32 种被转义字符。
+// 字符类按实测 32 字符全集构造：早期示例正则漏了 ' 与 +，
+// 按实测频次（\' 197 次、\+ 167 次）与 32 字符验收补回。
 //
 // MUST 单趟 ReplaceAllString：实测有 26 处嵌套转义（原文本身含 \.，
 // 上游再转义一层得到 \\\.）。单趟只脱一层得到 \.；多趟会继续得到 .，
@@ -106,7 +107,7 @@ func neutralizeBody(body, nonce string) string {
 
 // wrapUntrustedDegraded 是随机源失效时的退化路径。
 // crypto/rand 失败无法恢复；此时退回固定 nonce 并剥离 body 内所有裸 '<'，
-// 即使定界符可预测也无法伪造标签（12 号 §七的残余风险方案）。
+// 即使定界符可预测也无法伪造标签。
 func wrapUntrustedDegraded(source, body string) string {
 	const fixedNonce = "000000000000"
 	body = strings.ReplaceAll(body, "<", "&lt;")
@@ -124,6 +125,34 @@ func halfWidth(r rune) rune {
 		return r - 0xFEE0
 	}
 	return r
+}
+
+// TruncateRunes 按 limit 个 rune 截断；limit <= 0 表示不截断。
+func TruncateRunes(s string, limit int) string {
+	if limit <= 0 {
+		return s
+	}
+	out, _ := SliceByRune(s, 0, limit)
+	return out
+}
+
+// TruncateUntrusted 按 limit 个 rune 截断 WrapUntrusted 的包裹结果，保留首尾标签。
+// 直接切包裹后的字符串会切出未闭合的定界符，调用方无法区分正文结束与标签断裂。
+func TruncateUntrusted(wrapped string, limit int) string {
+	open := strings.Index(wrapped, ">\n")
+	closeAt := strings.LastIndex(wrapped, "\n</untrusted_content")
+	if open < 0 || closeAt < open {
+		out, _ := SliceByRune(wrapped, 0, limit)
+		return out
+	}
+	prefix := wrapped[:open+2]
+	suffix := wrapped[closeAt:]
+	avail := limit - utf8.RuneCountInString(prefix) - utf8.RuneCountInString(suffix)
+	if avail <= 0 {
+		return prefix + suffix
+	}
+	body, _ := SliceByRune(wrapped[open+2:closeAt], 0, avail)
+	return prefix + body + suffix
 }
 
 // ClipBytes 按 maxBytes 截断并在末尾追加 "(truncated)"；空输入返回 nil，

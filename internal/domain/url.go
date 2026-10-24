@@ -17,10 +17,10 @@ import (
 
 // NormalizeUrl 把 URL 归一成缓存 key 与去重用的稳定形式。
 //
-// 结果 MUST NOT 发给上游：归一可能改变语义（12 号 §3.3）。
+// 结果 MUST NOT 发给上游：归一可能改变语义。
 // trackingParams 由调用方从配置注入，传 nil 表示不剥离任何参数；
 // 在 domain 硬编码这张表会让 [dedupe].tracking_params 变成假配置。
-func NormalizeUrl(raw string, trackingParams []string) (string, error) { //nolint:revive // 契约函数名，见 11 号 §一
+func NormalizeUrl(raw string, trackingParams []string) (string, error) { //nolint:revive // 对外函数名固定为 NormalizeUrl/HashUrl
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("parse url: %w", err)
@@ -44,7 +44,11 @@ func NormalizeUrl(raw string, trackingParams []string) (string, error) { //nolin
 	u.Fragment = ""
 	u.RawFragment = ""
 	u.ForceQuery = false
-	u.RawQuery = filterQuery(u.Query(), trackingParams)
+	// 非法转义的 query 不能交给 url.Query：它会静默丢弃解析失败的部分，
+	// 让两个不同的 URL 归一成同一个缓存 key。解析失败时保留原串。
+	if values, err := url.ParseQuery(u.RawQuery); err == nil {
+		u.RawQuery = filterQuery(values, trackingParams)
+	}
 
 	// 根路径与无路径必须归一成同一个 key；非根路径的尾斜杠有语义，MUST NOT 删。
 	if u.Path == "/" {
@@ -59,7 +63,7 @@ func NormalizeUrl(raw string, trackingParams []string) (string, error) { //nolin
 //
 // 手写循环而不是 hash/fnv：后者的 Write 返回一个永远为 nil 的 error，
 // 在 errcheck 的 check-blank 下会被迫写一条不可达的错误分支。
-func HashUrl(s string) uint64 { //nolint:revive // 契约函数名，见 11 号 §一
+func HashUrl(s string) uint64 { //nolint:revive // 对外函数名固定为 NormalizeUrl/HashUrl
 	const (
 		offset64 = 14695981039346656037
 		prime64  = 1099511628211

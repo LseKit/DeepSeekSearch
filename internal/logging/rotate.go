@@ -188,11 +188,11 @@ func gzipFile(path string) (err error) {
 	}
 	defer func() { err = errors.Join(err, src.Close()) }()
 
-	tmp := path + ".gz.tmp"
-	dst, createErr := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) //nolint:gosec // 路径来自日志目录内的已解析文件名
+	dst, createErr := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.gz.tmp")
 	if createErr != nil {
 		return fmt.Errorf("创建压缩临时文件失败: %w", createErr)
 	}
+	tmp := dst.Name()
 	zw := gzip.NewWriter(dst)
 	if _, copyErr := io.Copy(zw, src); copyErr != nil {
 		return errors.Join(fmt.Errorf("压缩日志失败: %w", copyErr),
