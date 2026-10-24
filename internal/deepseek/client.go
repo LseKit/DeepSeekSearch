@@ -30,14 +30,14 @@ type Client interface {
 	// Fetch 调用 POST /v1/tools/fetch。
 	// 返回的 Content 是上游原文（含 Markdown 反斜杠转义），反转义由 Tools 层负责。
 	Fetch(ctx context.Context, req domain.FetchRequest) (domain.FetchResponse, error)
-	// Ping 发 GET {base_url}/v1/tools/search，把 HTTP 405 判定为健康（ADR-015）。
+	// Ping 发 GET {base_url}/v1/tools/search，把 HTTP 405 判定为健康。
 	Ping(ctx context.Context) error
 }
 
 // Config 是 Client 自己的依赖参数，不是全局 Config。
 type Config struct {
-	BaseUrl   string //nolint:revive // 契约字段名，见 11 号 §三
-	ApiKey    string //nolint:revive // 契约字段名，见 11 号 §三
+	BaseUrl   string //nolint:revive // 对外字段名固定为 BaseUrl/ApiKey
+	ApiKey    string //nolint:revive // 对外字段名固定为 BaseUrl/ApiKey
 	UserAgent string
 
 	// PerAttempt 是一次 HTTP 往返的硬上限，由本包用 context.WithTimeout 执行。
@@ -59,21 +59,29 @@ type client struct {
 }
 
 // New 构造 Client。base_url 非法时不在构造期 panic，而是让每个方法返回 3090。
-func New(cfg Config) Client { //nolint:gocritic // 签名由 11 号 §三 固定
+func New(cfg Config) Client { //nolint:gocritic // 签名与上游客户端接口保持一致
 	parsed, err := url.Parse(cfg.BaseUrl)
 	if err == nil && (parsed == nil ||
 		(parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "") {
 		err = errors.New("必须是 http/https 且包含 host")
 	}
 	return &client{
-		cfg:     cfg,
-		hc:      &http.Client{Transport: newTransport(&cfg)},
+		cfg: cfg,
+		hc: &http.Client{
+			Transport: newTransport(&cfg),
+			// 上游只有 POST /v1/tools/{search,fetch} 两个端点，重定向没有正当用途。
+			// 默认跟随最多 10 跳的后果：同域跳转会把 Bearer 一起带过去（Go 只在
+			// 跨域时剥 Authorization），base_url 指向自建代理时一次误配的 302
+			// 就能把请求送进内网，还会把 1 次调用放大成最多 10 次计费。
+			// 收到 3xx 时按「非 200」走 parseUpstreamError，不追。
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 		initErr: err,
 	}
 }
 
 // Search 调用 POST /v1/tools/search。
-func (c *client) Search(ctx context.Context, req domain.SearchRequest) (domain.SearchResponse, error) { //nolint:gocritic // 签名由 11 号 §三 固定
+func (c *client) Search(ctx context.Context, req domain.SearchRequest) (domain.SearchResponse, error) { //nolint:gocritic // 签名与上游客户端接口保持一致
 	if err := c.ready(); err != nil {
 		return domain.SearchResponse{}, err
 	}
@@ -102,7 +110,7 @@ func (c *client) Fetch(ctx context.Context, req domain.FetchRequest) (domain.Fet
 	return parseFetchResponse(raw)
 }
 
-// Ping 用 GET /v1/tools/search 期望 405 探活；405 不计费（ADR-015）。
+// Ping 用 GET /v1/tools/search 期望 405 探活；405 不计费。
 func (c *client) Ping(ctx context.Context) error {
 	if err := c.ready(); err != nil {
 		return err
@@ -164,9 +172,14 @@ func (c *client) do(ctx context.Context, method, path string, body any) (raw []b
 		return nil, 0, fmt.Errorf("deepseek: 网络请求失败: %w", domain.NewNetworkError(classifyNetErr(ctx, doErr), attempt, doErr))
 	}
 	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("deepseek: 关闭响应体失败: %w", closeErr))
+		closeErr := resp.Body.Close()
+		// 正文已完整读到时，Close 失败（HTTP/2 RST_STREAM 之类）MUST NOT 把成功
+		// 响应变成错误：上层只看 err，一次 Close 抖动会让已经拿到、已经计费的内容
+		// 被丢弃并触发重试 —— 那是双重计费。只在本来就要返回错误时并入。
+		if closeErr == nil || err == nil {
+			return
 		}
+		err = errors.Join(err, fmt.Errorf("deepseek: 关闭响应体失败: %w", closeErr))
 	}()
 
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, c.cfg.MaxResponseBytes+1))
@@ -176,7 +189,7 @@ func (c *client) do(ctx context.Context, method, path string, body any) (raw []b
 	}
 	if int64(len(raw)) > c.cfg.MaxResponseBytes {
 		fire(raw)
-		return nil, resp.StatusCode, newResponseTooLargeError(resp.StatusCode, c.cfg.MaxResponseBytes)
+		return nil, resp.StatusCode, newResponseTooLargeError(resp.StatusCode, raw, c.cfg.MaxResponseBytes)
 	}
 	fire(raw)
 	return raw, resp.StatusCode, nil
