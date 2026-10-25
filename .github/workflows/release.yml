@@ -1,5 +1,5 @@
 # tag 推送触发发布。
-# 产物：4 平台二进制 + SHA256SUMS + **一份** SBOM（SPDX JSON）。
+# 产物：4 平台二进制 + SHA256SUMS + **SHA256SUMS 的 cosign keyless 签名** + **一份** SBOM（SPDX JSON）。
 #   🔴 SBOM 只有一份，不是「每平台一份」：anchore/sbom-action 扫的是**依赖图**
 #     （go.mod / go.sum），而四个平台产物的依赖图完全相同 —— CGO_ENABLED=0 +
 #     纯 Go SQLite 驱动 ⇒ 没有任何平台专属依赖。原注释描述了一个本 workflow
@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: write     # 创建 Release 与上传附件
+  id-token: write     # cosign keyless 用 OIDC 身份换取短期签名证书
 
 env:
   # 🔴 与 ci.yml 的 GO_VERSION 逐字相同（完整补丁版本，理由见 ci.yml 顶部注释）。
@@ -34,6 +35,9 @@ jobs:
   verify-tag:
     name: 校验 tag 真实存在
     runs-on: ubuntu-latest
+    env:
+      # workflow_dispatch 的输入由触发者控制，MUST 经 env 传入脚本，MUST NOT 直接拼进 run。
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
@@ -42,7 +46,7 @@ jobs:
       - name: tag 存在性 + 附注 tag 校验
         run: |
           set -euo pipefail
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="$TAG"
           if ! git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
             echo "❌ tag ${tag} 不存在，拒绝发布。"
             echo "   softprops/action-gh-release 对不存在的 tag 会自动创建 tag + release，"
@@ -68,6 +72,8 @@ jobs:
     name: 交叉编译并发布
     runs-on: ubuntu-latest
     needs: [verify-tag, ci]
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
@@ -80,7 +86,7 @@ jobs:
 
       - name: 确认 tag 与 Makefile 的 VERSION 一致
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="$TAG"
           want="$(grep -E '^VERSION[[:space:]]*:=' Makefile | awk '{print $3}')"
           echo "tag=$tag  Makefile VERSION=$want"
           [ "$tag" = "$want" ] || { echo "tag 与 Makefile VERSION 不一致，拒绝发布"; exit 1; }
@@ -88,7 +94,7 @@ jobs:
       - name: 交叉编译 4 平台
         run: |
           set -euo pipefail
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="$TAG"
           mkdir -p dist
           for target in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
             os="${target%/*}"; arch="${target#*/}"
@@ -103,22 +109,31 @@ jobs:
       - name: 生成校验和
         run: cd dist && sha256sum DeepSeekSearch_* > SHA256SUMS && cat SHA256SUMS
 
+      # SHA256SUMS 与二进制同源发布，只校验哈希无法证明来源；keyless 签名把
+      # 「哪次 CI、哪个仓库、哪个 ref」绑进 Sigstore 透明日志，补上身份证明。
+      - name: 安装 cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: 签名校验和（keyless）
+        run: cosign sign-blob --yes --bundle dist/SHA256SUMS.bundle dist/SHA256SUMS
+
       - name: 生成 SBOM（SPDX JSON，全项目一份）
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0
         with:
           path: ./
           format: spdx-json
-          output-file: dist/DeepSeekSearch_${{ github.event.inputs.tag || github.ref_name }}.sbom.json
+          output-file: dist/DeepSeekSearch_${{ env.TAG }}.sbom.json
           artifact-name: sbom
 
       - name: 创建 Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
           generate_release_notes: true     # 分组规则见 .github/release.yml
           files: |
             dist/DeepSeekSearch_*
             dist/SHA256SUMS
+            dist/SHA256SUMS.bundle
             dist/*.sbom.json
           fail_on_unmatched_files: true
