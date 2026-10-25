@@ -165,8 +165,10 @@ func runResearchFetch(ctx context.Context, deps *Deps, items []searchOutputItem,
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			out, payload := runFetchSub(ctx, deps, items[i].URL, maxChars)
-			src := researchSource{Index: i + 1, Title: items[i].Title, URL: items[i].URL,
-				Date: items[i].Date, RerankScore: items[i].RerankScore}
+			src := researchSource{
+				Index: i + 1, Title: items[i].Title, URL: items[i].URL,
+				Date: items[i].Date, RerankScore: items[i].RerankScore,
+			}
 			if payload != nil {
 				src.Error = payload.Message
 			} else {

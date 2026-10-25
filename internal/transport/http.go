@@ -91,7 +91,8 @@ func (h *httpHandler) Serve(ctx context.Context, srv *mcp.Server) error {
 }
 
 func newHTTPHandler(cfg *config.Config, build domain.BuildInfo, log *slog.Logger,
-	startedAt time.Time, cache CacheStats, srv *mcp.Server) (http.Handler, error) {
+	startedAt time.Time, cache CacheStats, srv *mcp.Server,
+) (http.Handler, error) {
 	policy, err := newOriginPolicy(cfg)
 	if err != nil {
 		return nil, err

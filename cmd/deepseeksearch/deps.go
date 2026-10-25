@@ -27,7 +27,8 @@ import (
 )
 
 func buildDeps(cfg *config.Config, tz *time.Location, clk resilience.Clock, logger *slog.Logger,
-	build domain.BuildInfo, newClient clientFactory) (tools.Deps, func() error, error) {
+	build domain.BuildInfo, newClient clientFactory,
+) (tools.Deps, func() error, error) {
 	rc := resilienceConfig(cfg, tz, clk, logger)
 	cacheStore, err := openCache(cfg, &rc, logger)
 	if err != nil {

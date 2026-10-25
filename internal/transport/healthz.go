@@ -44,7 +44,8 @@ type healthzPayload struct {
 }
 
 func healthzHandler(cfg *config.Config, build domain.BuildInfo, startedAt time.Time,
-	cache CacheStats, log *slog.Logger, next http.Handler) http.Handler {
+	cache CacheStats, log *slog.Logger, next http.Handler,
+) http.Handler {
 	return &middleware{name: "healthz", next: next, serve: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != cfg.Server.Http.HealthzPath {
 			next.ServeHTTP(w, r)

@@ -91,9 +91,11 @@ type healthCache struct {
 func (c *healthCache) Get(context.Context, string) (data []byte, hit bool, err error) {
 	return nil, false, nil
 }
+
 func (c *healthCache) Put(context.Context, string, []byte, time.Duration) error {
 	return nil
 }
+
 func (c *healthCache) Stats() (entries int, bytes int64, degraded bool) {
 	return c.entries, c.bytes, c.degraded
 }

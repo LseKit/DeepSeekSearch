@@ -194,7 +194,8 @@ func watchStop(ctx context.Context, stop <-chan struct{}, cancel context.CancelF
 
 // failRuntime 处理装配失败：记日志、按顺序关缓存与日志，返回退出码 1。
 func failRuntime(logger *slog.Logger, closer io.Closer, closeCache func() error,
-	stderr io.Writer, stage string, cause error) int {
+	stderr io.Writer, stage string, cause error,
+) int {
 	logger.Error(domain.EvErr, "stage", stage, "error", cause)
 	if closeCache != nil {
 		if closeErr := closeCache(); closeErr != nil {
@@ -210,7 +211,8 @@ func failRuntime(logger *slog.Logger, closer io.Closer, closeCache func() error,
 // shutdown 固定顺序：ReleaseAll → cache.Close → logger.Close。
 // ReleaseAll 必须在 cache.Close 之前，否则 SQLite 连接已关、租约只能等 TTL。
 func shutdown(logger *slog.Logger, closer io.Closer, writer *logging.RotatingWriter,
-	sf resilience.Singleflight, closeCache func() error, serveErr error) int {
+	sf resilience.Singleflight, closeCache func() error, serveErr error,
+) int {
 	code := 0
 	if serveErr != nil {
 		logger.Error(domain.EvErr, "stage", "serve", "error", serveErr)

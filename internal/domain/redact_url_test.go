@@ -20,8 +20,10 @@ func TestRedactURLStripsUserInfo(t *testing.T) {
 		//nolint:gosec // 假凭据是测试输入，断言的正是它被剥掉
 		{name: "带密码且无 query", in: "http://user:secret@example.com/a", want: "http://example.com/a"},
 		//nolint:gosec // 同上
-		{name: "带密码且 query 命中", in: "http://user:secret@example.com/a?token=abc&x=1",
-			keys: []string{"token"}, want: "http://example.com/a?token=***&x=1"},
+		{
+			name: "带密码且 query 命中", in: "http://user:secret@example.com/a?token=abc&x=1",
+			keys: []string{"token"}, want: "http://example.com/a?token=***&x=1",
+		},
 		{name: "只有用户名", in: "https://alice@example.com/", want: "https://example.com/"},
 		{name: "无凭据无命中时原样返回", in: "https://example.com/a?x=1", want: "https://example.com/a?x=1"},
 		//nolint:gosec // 同上

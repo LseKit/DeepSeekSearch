@@ -42,9 +42,7 @@ type searchParams struct {
 	Warnings       []string
 }
 
-var (
-	labelPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-)
+var labelPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // ISO 639-1 全量码表；未知码只记 warning，不拒绝。
 

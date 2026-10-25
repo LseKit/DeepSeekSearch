@@ -43,7 +43,8 @@ func Build(name string, cfg config.Config, build domain.BuildInfo, logger *slog.
 // BuildWithCache 与 Build 相同，并把缓存统计注入 /healthz；cache 为 nil 时字段保持零值。
 // 另开函数而不是改 Build：Build 的签名被外部调用方依赖，新增函数不破坏既有调用方。
 func BuildWithCache(name string, cfg config.Config, build domain.BuildInfo, logger *slog.Logger, //nolint:gocritic // 与 Build 同口径，cfg 按值传入
-	cache CacheStats) (Handler, error) {
+	cache CacheStats,
+) (Handler, error) {
 	switch name {
 	case "stdio":
 		return &stdioHandler{cfg: cfg, build: build, log: logger}, nil

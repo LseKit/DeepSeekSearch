@@ -27,6 +27,7 @@ func CombineIPv4(values []uint64) (uint32, bool) {
 	}
 	return out, true
 }
+
 func ipv4Widths(n int) ([]uint, bool) {
 	switch n {
 	case 2:
