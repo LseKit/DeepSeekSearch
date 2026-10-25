@@ -46,8 +46,14 @@ func NormalizeUrl(raw string, trackingParams []string) (string, error) { //nolin
 	u.ForceQuery = false
 	// 非法转义的 query 不能交给 url.Query：它会静默丢弃解析失败的部分，
 	// 让两个不同的 URL 归一成同一个缓存 key。解析失败时保留原串。
+	//
+	// 🔴 解析失败最常见的原因是 query 里带 `;`（Go 1.17 起 ParseQuery 直接报错）。
+	// 此时 MUST NOT 整段跳过剥离：同一个页面会因一个分号变成不同缓存 key，白花一次计费
+	// （实测 `?utm_source=a;b` 与 `?` 是两条缓存记录）。退化为「只删追踪片段、其余原样保留」。
 	if values, err := url.ParseQuery(u.RawQuery); err == nil {
 		u.RawQuery = filterQuery(values, trackingParams)
+	} else {
+		u.RawQuery = stripTrackingLoose(u.RawQuery, trackingParams)
 	}
 
 	// 根路径与无路径必须归一成同一个 key；非根路径的尾斜杠有语义，MUST NOT 删。
@@ -99,6 +105,41 @@ func normalizeHost(u *url.URL, scheme string) (string, error) {
 
 // filterQuery 剥离追踪参数，并按字典序重排剩余键与同名值。
 // 键名比较大小写不敏感、精确匹配；前缀相同不算命中。
+// stripTrackingLoose 用于 url.ParseQuery 失败的 query：只删掉键名命中 trackingParams
+// 的 `&` 片段，其余原样保留（不重新编码、不排序）。
+//
+// 为什么不复用 filterQuery：那条路会 Encode()，而解析失败的 query 本来就没法用
+// url.Values 安全表示；重编码反而可能把两个语义不同的 URL 归一成同一个缓存 key。
+// 降级目标只有一个 —— 让追踪参数不再击穿缓存，其余字节一律不动。
+func stripTrackingLoose(raw string, trackingParams []string) string {
+	if raw == "" || len(trackingParams) == 0 {
+		return raw
+	}
+
+	drop := make(map[string]struct{}, len(trackingParams))
+	for _, p := range trackingParams {
+		drop[strings.ToLower(p)] = struct{}{}
+	}
+
+	parts := strings.Split(raw, "&")
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		key, _, _ := strings.Cut(part, "=")
+		decoded, err := url.QueryUnescape(key)
+		if err != nil {
+			decoded = key
+		}
+		if _, ok := drop[strings.ToLower(decoded)]; ok {
+			continue
+		}
+		kept = append(kept, part)
+	}
+	return strings.Join(kept, "&")
+}
+
 func filterQuery(values url.Values, trackingParams []string) string {
 	if len(values) == 0 {
 		return ""

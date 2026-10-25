@@ -101,6 +101,26 @@ func TestNormalizeUrl(t *testing.T) {
 			tracking: []string{"utm_source"},
 			want:     "https://x.com/a?utm_source_x=1",
 		},
+		// 以下三条：url.ParseQuery 在 Go 1.17+ 遇到 `;` 或非法转义会整段报错。
+		// 此前走「保留原串」的分支 ⇒ 追踪参数留在 key 里，同一页面白花一次计费。
+		{
+			name:     "分号导致解析失败时仍剥离追踪参数",
+			raw:      "https://x.com/a?utm_source=a;b&keep=1",
+			tracking: []string{"utm_source"},
+			want:     "https://x.com/a?keep=1",
+		},
+		{
+			name:     "值里带分号时只删追踪片段、其余原样保留",
+			raw:      "https://x.com/a?q=a;b&utm_source=x",
+			tracking: []string{"utm_source"},
+			want:     "https://x.com/a?q=a;b",
+		},
+		{
+			name:     "非法转义导致解析失败时也剥离，且不动其它片段",
+			raw:      "https://x.com/a?a=1&b=%zz&utm_source=x",
+			tracking: []string{"utm_source"},
+			want:     "https://x.com/a?a=1&b=%zz",
+		},
 		{
 			name: "fragment 丢弃",
 			raw:  "https://example.com/p#sec",
