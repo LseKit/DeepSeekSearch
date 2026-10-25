@@ -57,8 +57,8 @@ jobs:
     name: 格式（gofumpt）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -80,8 +80,8 @@ jobs:
     name: 静态检查（golangci-lint）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -93,8 +93,8 @@ jobs:
     name: 规模红线（F-S1/F-S3/F-S5）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: 下载工具链
@@ -108,8 +108,8 @@ jobs:
     name: 测试（-race）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -120,8 +120,8 @@ jobs:
     name: 覆盖率门槛
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -154,7 +154,7 @@ jobs:
     name: 文档漂移与发布文件
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # 两参签名：CheckDocDrift.sh <文档根> <代码根>，文档根是仓库内 docs/。
       - run: bash Scripts/CheckDocDrift.sh docs .
       # 这两个脚本都是秒级，避免 A/B 级文件被误删直到打 tag 才暴露。
@@ -174,8 +174,8 @@ jobs:
           - { goos: darwin,  goarch: arm64 }
           - { goos: windows, goarch: amd64 }
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -192,8 +192,8 @@ jobs:
     name: 已知漏洞（govulncheck）
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -207,8 +207,8 @@ jobs:
     name: Windows 冒烟（守 time/tzdata）
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
