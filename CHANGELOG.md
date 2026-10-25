@@ -32,7 +32,7 @@
 - `domain.Section` 增加 `Start`（本节正文的 rune 偏移），取节改用它；此前消费方累加 `Chars` 推偏移，**纯空白前言不生成节**会让其后每一节整体错位
 - 跨进程 singleflight：带错误码的租约行**过期后可被抢占**。此前 `readLeaseState` 不判过期即返回错误，而「标记失败 + 删除」不是原子的 —— 进程被 SIGKILL 就留下一行毒化记录，该 key 对所有进程永久失败、重启也不恢复
 - 上游响应体读取成功后，`Body.Close()` 失败不再把成功响应变成错误（否则已计费的内容被丢弃并重试 = 双重计费）
-- 构建：`go.mod` 钉 `toolchain go1.27.3`，Makefile 的 `build`/`dist` 显式 `GOTOOLCHAIN=auto`，CI 的 `GO_VERSION` 同步为 `1.27.3`
+- 构建：`go.mod` 钉 `toolchain go1.27.3`，CI 的 `GO_VERSION` 同步为 `1.27.3`；本机工具链已升到同一版本，Makefile 因此保持 `GOTOOLCHAIN=local`（禁止静默联网拉工具链），发布前用 `-version` 核对 go 段
 - 部署：PM2 `kill_timeout` 20s → 30s（优雅关闭最坏链约 25s，20s 会让 SIGKILL 落在租约释放之前）
 - `internal/tools` 的用量统计器移入 `internal/health`（`UsageTracker`）：tools 已贴到 F-S5 的 3000 行上限，移入后 tools 2916 行 / 8 导出，health 633 行 / 7 导出，且没有新增依赖方向
 - `isStdoutDest` 补 `/dev/fd/1` 与 `/proc/self/fd/1`（同一个 fd 的另两种写法，漏了等于给 stdio 的协议通道留后门）
@@ -89,8 +89,4 @@
 - 不做结果重排序、不做固定阈值过滤、不做答案合成
 - 不做 SSE 传输（2026-07-28 只定义 stdio 与 Streamable HTTP）
 - 上游抓取有 30 秒硬超时，超大单页返回 `504`，重试通常也无效
-<!-- 🔴 原来这里写的是「`truncated_by="upstream"` 为启发式判定」，该启发式已随
-     23 号 §4.6/§4.7 的实测推翻而删除（上游真实失败模式是 504 超时，不是静默截断；
-     成功的并发响应字节级全等）。`truncated_by` 现在只允许 `"budget"`。
-     CHANGELOG 是发布产物，MUST NOT 继续向用户宣告一个不存在的字段。 -->
 - `ori_question` 实测几乎无效，默认不传
