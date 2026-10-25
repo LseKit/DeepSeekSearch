@@ -7,10 +7,24 @@
 
 ## [未发布]
 
-2026-10-24 ~ 10-25 两轮审计（外部 DeepSeek 审计报告 18 项 + 本地 L2/L3 安全审查 + 三路分包审计 + 实测）的修复。
+## [v0.1.0] - 2026-10-25
+
+首个公开发布版本。包含 2026-10-20 的功能基线，以及 2026-10-24 ~ 10-25 两轮审计（外部 DeepSeek 审计报告 18 项 + 本地 L2/L3 安全审查 + 三路分包审计 + 实测）的全部修复。
 
 ### 新增
 
+- `ds_search`：DeepSeek 网页搜索。支持 `site:` / `-site:` / `lang:` / `after:` / `before:` / 精确短语等结构化语法，响应始终带 `query_effective` 与 `warnings`
+- `ds_fetch`：网页正文抓取。`content` 超过 8000 字符时返回目录（按 Markdown 标题分节），可用 `cache_id` + `section` 按节取正文
+- `ds_health`：本地诊断工具。检查 Key / 上游连通 / 缓存 / 生效配置，**不发起计费请求**
+- `ds_research`：组合研究工具。1 次搜索 + 并发抓取前 N 条来源，返回带编号引用的材料
+- `ds_extract`：批量抓取工具。1~10 个 URL 并发抓取，单条失败只影响该条
+- 传输：`stdio` 与**无状态 `Streamable HTTP`**（MCP 2026-07-28，端点 `/mcp`）
+- 健康检查端点 `/healthz`（与 MCP 同端口，免鉴权）
+- 缓存：SQLite（WAL）+ 跨进程 singleflight，防止并发重复计费
+- 韧性：per-key 令牌桶、抖动重试、重试预算、连续失败熔断、三层预算硬顶
+- MCP Resource：`ds://error-codes`（42 个错误码）、`ds://effective-config`（脱敏配置）、`ds://usage`（调用统计）
+- 安全：SSRF 私网黑名单（12 个网段 + 3 个域名后缀 + 6 种 IP 混淆写法）、Origin 校验、可选 Bearer 鉴权、常量时间比较
+- 版本号：编译期 `-ldflags` 注入，`--version` / `serverInfo.version` / `/healthz` 三处同源
 - `ds_search`：`after` 晚于 `before` 时记 warning（此前静默打一次上游拿 0 条，白花一次计费）
 - 工具入参严格化：**未知/拼错的参数键一律拒绝**（`1000`，`details` 带库给出的键名与合法键清单）。schema 早就写了 `additionalProperties:false`，但 SDK 与 `encoding/json` 默认都静默忽略未知键
 - `ds_fetch`：URL **端口越界**（如 `:99999`）本地拒绝，不再放给上游变成一次计费的 `2400`
@@ -50,37 +64,6 @@
 - `/healthz` 响应里的 `commit` / `build_time` / `go_version` / `upstream.base_url`（见「变更」）
 - `[ratelimit.warn]` 与 `[search]` 两个配置段：前者（`window_s` / `warn_at_calls`）的软告警从未实现，后者的 4 个键也没有任何读取点（工具层的 `min_rerank` / `min_authority` 是**请求参数**，与此无关）。写这些键现在会按未知键拒绝启动
 - `config.example.toml` 里所有「某键已移除/已废弃」的历史叙事：模板只列生效键与有效说明
-
-## [v0.1.0] - 2026-10-20
-
-首个可发布版本。
-
-### 新增
-
-- `ds_search`：DeepSeek 网页搜索。支持 `site:` / `-site:` / `lang:` / `after:` / `before:` / 精确短语等结构化语法，响应始终带 `query_effective` 与 `warnings`
-- `ds_fetch`：网页正文抓取。`content` 超过 8000 字符时返回目录（按 Markdown 标题分节），可用 `cache_id` + `section` 按节取正文
-- `ds_health`：本地诊断工具。检查 Key / 上游连通 / 缓存 / 生效配置，**不发起计费请求**
-- `ds_research`：组合研究工具。1 次搜索 + 并发抓取前 N 条来源，返回带编号引用的材料
-- `ds_extract`：批量抓取工具。1~10 个 URL 并发抓取，单条失败只影响该条
-- 传输：`stdio` 与**无状态 `Streamable HTTP`**（MCP 2026-07-28，端点 `/mcp`）
-- 健康检查端点 `/healthz`（与 MCP 同端口，免鉴权）
-- 缓存：SQLite（WAL）+ 跨进程 singleflight，防止并发重复计费
-- 韧性：per-key 令牌桶、抖动重试、重试预算、连续失败熔断、三层预算硬顶
-- MCP Resource：`ds://error-codes`（42 个错误码）、`ds://effective-config`（脱敏配置）、`ds://usage`（调用统计）
-- 安全：SSRF 私网黑名单（12 个网段 + 3 个域名后缀 + 6 种 IP 混淆写法）、Origin 校验、可选 Bearer 鉴权、常量时间比较
-- 版本号：编译期 `-ldflags` 注入，`--version` / `serverInfo.version` / `/healthz` 三处同源
-
-### 变更
-
-- 无（首版）
-
-### 修复
-
-- 无（首版）
-
-### 移除
-
-- 无（首版）
 
 ### 已知限制
 
