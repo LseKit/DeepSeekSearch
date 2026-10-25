@@ -47,6 +47,9 @@ jobs:
         run: |
           set -euo pipefail
           tag="$TAG"
+          # actions/checkout 检出 tag 时会用 --no-tags 把 commit 写进 refs/tags/<tag>，
+          # 覆盖先前取回的附注 tag 对象；这里显式取回 tag 对象再判类型。
+          git fetch --force origin "refs/tags/${tag}:refs/tags/${tag}"
           if ! git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
             echo "❌ tag ${tag} 不存在，拒绝发布。"
             echo "   softprops/action-gh-release 对不存在的 tag 会自动创建 tag + release，"
