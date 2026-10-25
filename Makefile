@@ -13,11 +13,11 @@ LDFLAGS := -s -w \
 
 .PHONY: build test test-race test-integration lint cover cover-check cover-html clean release dist
 
-# 🔴 构建一律显式 GOTOOLCHAIN=auto：go.mod 的 toolchain 行是产物 Go 版本的真源，
-#    而构建机若设了 GOTOOLCHAIN=local 会**静默忽略**它 —— 本机就是这样，
-#    直接 make build 出来的二进制 go 段仍是旧补丁版本（GO-2026-6809 修不掉）。
+# 🔴 产物 Go 版本的真源是 go.mod 的 `toolchain` 行；本机三台的工具链已与该行一致
+#    （GOTOOLCHAIN=local，禁止静默联网拉工具链）。构建机若仍是旧补丁版本 + local，
+#    这里不会有任何报错 —— 发布前 MUST 用 `-version` 核对 go 段，MUST NOT 只看 go.mod。
 build:
-	CGO_ENABLED=0 GOTOOLCHAIN=auto go build -trimpath -ldflags '$(LDFLAGS)' \
+	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' \
 		-o ../Bin/DeepSeekSearch ./cmd/deepseeksearch
 
 test:
@@ -61,10 +61,10 @@ clean:
 dist:
 	rm -rf ../Bin
 	mkdir -p ../Bin
-	CGO_ENABLED=0 GOTOOLCHAIN=auto GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_linux_amd64   ./cmd/deepseeksearch
-	CGO_ENABLED=0 GOTOOLCHAIN=auto GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_linux_arm64   ./cmd/deepseeksearch
-	CGO_ENABLED=0 GOTOOLCHAIN=auto GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_darwin_arm64  ./cmd/deepseeksearch
-	CGO_ENABLED=0 GOTOOLCHAIN=auto GOOS=windows GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_windows_amd64.exe ./cmd/deepseeksearch
+	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_linux_amd64   ./cmd/deepseeksearch
+	CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_linux_arm64   ./cmd/deepseeksearch
+	CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_darwin_arm64  ./cmd/deepseeksearch
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o ../Bin/DeepSeekSearch_$(VERSION)_windows_amd64.exe ./cmd/deepseeksearch
 	cd ../Bin && sha256sum DeepSeekSearch_$(VERSION)_* > SHA256SUMS
 
 # release 只负责产出发布物；tag/推送/签名由 Scripts/Release.sh 执行。
