@@ -34,7 +34,6 @@ func TestDefault(t *testing.T) {
 		{name: "search 缓存 TTL 默认 180", got: cfg.Cache.TtlSearchS, want: 180},
 		{name: "返回字符预算默认 32000", got: cfg.Limits.MaxTotalChars, want: 32000},
 		{name: "日志级别默认 info", got: cfg.Log.Level, want: "info"},
-		{name: "相关性绝对阈值默认 nil", got: cfg.Search.MinRerank, want: (*float64)(nil)},
 	}
 
 	for _, tt := range tests {

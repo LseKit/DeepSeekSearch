@@ -34,7 +34,6 @@ func (c Config) Validate() (warnings []string, err error) { //nolint:gocritic //
 	errs = append(errs, c.validateLimits()...)
 	errs = append(errs, c.validateCache()...)
 	errs = append(errs, c.validateDedupe()...)
-	errs = append(errs, c.validateSearch()...)
 	errs = append(errs, c.validateLog()...)
 	return c.collectWarnings(), errors.Join(errs...)
 }
@@ -122,7 +121,6 @@ func (c *Config) validateRateLimit() []error {
 	}
 	errs = append(errs, validateBucket("ratelimit.search", c.RateLimit.Search)...)
 	errs = append(errs, validateBucket("ratelimit.fetch", c.RateLimit.Fetch)...)
-	errs = append(errs, c.validateWarnCalls()...)
 	errs = append(errs, c.validateInflightQuota()...)
 
 	minTotal := min(c.Timeout.Search.TotalTimeoutMs, c.Timeout.Fetch.TotalTimeoutMs)
@@ -141,27 +139,6 @@ func validateBucket(name string, bucket rateLimitBucketConfig) []error {
 	}
 	if bucket.Burst < 1 {
 		errs = append(errs, configErr(domain.CodeLocConfigInvalid, "%s.burst 必须 ≥1，实际 %d", name, bucket.Burst))
-	}
-	return errs
-}
-
-func (c *Config) validateWarnCalls() []error {
-	var errs []error
-	if c.RateLimit.Warn.WindowS < 1 {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"ratelimit.warn.window_s 必须 ≥1，实际 %d", c.RateLimit.Warn.WindowS))
-	}
-	prev := 0
-	for i, n := range c.RateLimit.Warn.WarnAtCalls {
-		if n < 1 {
-			errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-				"ratelimit.warn.warn_at_calls[%d] 必须 ≥1，实际 %d", i, n))
-		}
-		if i > 0 && n <= prev {
-			errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-				"ratelimit.warn.warn_at_calls 必须严格升序，第 %d 项 %d ≤ 前一项 %d", i, n, prev))
-		}
-		prev = n
 	}
 	return errs
 }
@@ -341,23 +318,6 @@ func (c *Config) validateDedupe() []error {
 			"dedupe.max_per_domain 必须 ≥0，实际 %d", c.Dedupe.MaxPerDomain)}
 	}
 	return nil
-}
-
-func (c *Config) validateSearch() []error {
-	var errs []error
-	if c.Search.MinRerank != nil && (*c.Search.MinRerank < 0 || *c.Search.MinRerank > 3) {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"search.min_rerank 必须为 null 或 0~3，实际 %v", *c.Search.MinRerank))
-	}
-	if c.Search.MinAuthority != nil && (*c.Search.MinAuthority < 0 || *c.Search.MinAuthority > 4) {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"search.min_authority 必须为 null 或 0~4，实际 %d", *c.Search.MinAuthority))
-	}
-	if c.Search.MinRerankRatio != nil && (*c.Search.MinRerankRatio <= 0 || *c.Search.MinRerankRatio > 1) {
-		errs = append(errs, configErr(domain.CodeLocConfigInvalid,
-			"search.min_rerank_ratio 必须为 null 或 0 < r ≤ 1，实际 %v", *c.Search.MinRerankRatio))
-	}
-	return errs
 }
 
 func (c *Config) validateLog() []error {

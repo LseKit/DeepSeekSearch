@@ -43,7 +43,6 @@ type Config struct {
 	Limits    limitsConfig          `json:"limits"`
 	Cache     cacheConfig           `json:"cache"`
 	Dedupe    dedupeConfig          `json:"dedupe"`
-	Search    searchConfig          `json:"search"`
 	Security  securityConfig        `json:"security"`
 	Log       logConfig             `json:"log"`
 	ApiKey    string                `toml:"-" json:"-"` //nolint:revive // 对外字段名固定为 ApiKey/HttpToken
@@ -96,19 +95,12 @@ type rateLimitConfig struct {
 	MaxWaitMs   int                   `toml:"max_wait_ms" json:"max_wait_ms"`
 	Search      rateLimitBucketConfig `json:"search"`
 	Fetch       rateLimitBucketConfig `json:"fetch"`
-	Warn        rateLimitWarnConfig   `json:"warn"`
 }
 
 // rateLimitBucketConfig 是单个工具的令牌桶参数；search 与 fetch 各自独立。
 type rateLimitBucketConfig struct {
 	Rps   float64 `toml:"rps" json:"rps"`
 	Burst int     `toml:"burst" json:"burst"`
-}
-
-// rateLimitWarnConfig 管不阻断请求的调用量软告警。
-type rateLimitWarnConfig struct {
-	WindowS     int   `toml:"window_s" json:"window_s"`
-	WarnAtCalls []int `toml:"warn_at_calls" json:"warn_at_calls"`
 }
 
 // timeoutConfig 管分层超时：底层连接参数与两个工具各自的尝试预算。
@@ -195,14 +187,6 @@ type dedupeConfig struct {
 	TrackingParams []string `toml:"tracking_params" json:"tracking_params"`
 }
 
-// searchConfig 管搜索结果的可选过滤与展示；阶段一默认全部关闭。
-type searchConfig struct {
-	MinRerank      *float64 `toml:"min_rerank" json:"min_rerank"`
-	MinAuthority   *int     `toml:"min_authority" json:"min_authority"`
-	MinRerankRatio *float64 `toml:"min_rerank_ratio" json:"min_rerank_ratio"`
-	RankField      bool     `toml:"rank_field" json:"rank_field"`
-}
-
 // securityConfig 是可追加的主机名黑名单。IP 网段基线（私网/回环/链路本地/CGNAT 等）
 // 是代码硬编码的固定纵深防御（见 internal/toolvalidate/ssrf.go 的 blockedNets），不可配。
 type securityConfig struct {
@@ -241,7 +225,6 @@ func Default() Config {
 		Limits:    defaultLimits(),
 		Cache:     defaultCache(),
 		Dedupe:    defaultDedupe(),
-		Search:    defaultSearch(),
 		Security:  defaultSecurity(),
 		Log:       defaultLog(),
 	}
@@ -309,7 +292,6 @@ func defaultRateLimit() rateLimitConfig {
 		MaxWaitMs:   30000,
 		Search:      rateLimitBucketConfig{Rps: 30.0, Burst: 60},
 		Fetch:       rateLimitBucketConfig{Rps: 20.0, Burst: 40},
-		Warn:        rateLimitWarnConfig{WindowS: 60, WarnAtCalls: []int{100, 500, 1000}},
 	}
 }
 
@@ -378,10 +360,6 @@ func defaultDedupe() dedupeConfig {
 			"share_token", "si",
 		},
 	}
-}
-
-func defaultSearch() searchConfig {
-	return searchConfig{RankField: true}
 }
 
 func defaultSecurity() securityConfig {

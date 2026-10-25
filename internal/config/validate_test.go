@@ -142,16 +142,6 @@ func TestValidate(t *testing.T) {
 			wantErr: []string{"limits.default_detail"},
 		},
 		{
-			name:    "min_rerank 越界",
-			mutate:  func(c *Config) { c.Search.MinRerank = floatPtr(4) },
-			wantErr: []string{"search.min_rerank"},
-		},
-		{
-			name:    "warn_at_calls 非升序",
-			mutate:  func(c *Config) { c.RateLimit.Warn.WarnAtCalls = []int{100, 50} },
-			wantErr: []string{"ratelimit.warn.warn_at_calls"},
-		},
-		{
 			name:    "default_count 越界",
 			mutate:  func(c *Config) { c.Limits.DefaultCount = 0 },
 			wantErr: []string{"limits.default_count"},
@@ -293,5 +283,3 @@ func baseValidConfig() Config {
 	cfg.ApiKey = "sk-valid-test-key"
 	return cfg
 }
-
-func floatPtr(v float64) *float64 { return &v }

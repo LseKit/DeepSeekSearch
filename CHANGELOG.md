@@ -48,6 +48,8 @@
 
 - `dedupe.merge_reposts`：转载合并是 `domain.Dedupe` 恒定开启的一层，全仓零读取点 —— 设成 `false` 也不生效的假开关，写这个键现在按未知键拒绝启动
 - `/healthz` 响应里的 `commit` / `build_time` / `go_version` / `upstream.base_url`（见「变更」）
+- `[ratelimit.warn]` 与 `[search]` 两个配置段：前者（`window_s` / `warn_at_calls`）的软告警从未实现，后者的 4 个键也没有任何读取点（工具层的 `min_rerank` / `min_authority` 是**请求参数**，与此无关）。写这些键现在会按未知键拒绝启动
+- `config.example.toml` 里所有「某键已移除/已废弃」的历史叙事：模板只列生效键与有效说明
 
 ## [v0.1.0] - 2026-10-20
 

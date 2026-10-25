@@ -229,7 +229,7 @@ $ go test ./internal/resilience/ -race -v -run 'TestLimiter|TestClock'
 
 | # | 要求 |
 |:-:|---|---|
-| 1 | `CheckWindow(key)`：窗口内调用次数 ≥ `limits.budget.max_calls_per_window`（默认 **0 = 不限**）。软告警的 `ratelimit.warn.warn_at_calls` 是另一套，MUST NOT 混用 |
+| 1 | `CheckWindow(key)`：窗口内调用次数 ≥ `limits.budget.max_calls_per_window`（默认 **0 = 不限**）。软告警那套配置（原 `[ratelimit.warn]`）从未实现，已于 2026-10-25 整段移除 |
 | 2 | `CheckDaily(key)`：日累计 ≥ `limits.budget.max_calls_per_day`（默认 **0 = 不限**），跨日按 `log.timezone` 切分 |
 | 3 | `Record(key, n)`：累加窗口计数与日计数；跨日（按配置时区）自动清零 |
 | 4 | `TrimChars(s)`：按**剩余字符预算**截断，返回 `(截断后, 是否截断)`；用 `domain.SliceByRune` |
