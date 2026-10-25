@@ -65,7 +65,7 @@
 | 8 | `compress=true` → 轮转后的旧文件 gzip 成 `.log.gz`，**MUST NOT** 压缩当前正在写的文件；🔴 也 MUST NOT 压缩「日期 = 今天」的任何文件（同一天里另一个更晚启动的进程可能正在写它 —— 文件名带 PID 后同秒撞名已消除，但同日多文件仍合法） |
 | 9 | 并发安全：`sync.Mutex` 包住全部写与切分 |
 | 10 | 时间 MUST 来自注入的 `Clock`，**MUST NOT** 直接 `time.Now()`（见 `Engineering/20-编码规范.md` G11）。🔴 后台调度 goroutine 的「睡到明天 00:05」MUST 用注入的 `Clock.Sleep`/`Clock.Until` 等价能力实现，以便被 `FakeClock` 驱动 —— 否则跨日调度分支在测试里永远不可达 |
-| 11 | 每个文件 MUST 有文件头 5 字段，`作者: 小逸`（见 `AGENTS.md` §5.5） |
+| 11 | 每个文件 MUST 有文件头 5 字段，`作者: 小逸`（见 `docs/Engineering/20-编码规范.md` §4.4） |
 | 12 | 目录不存在时 `os.MkdirAll`（只创建 `Logs/`，MUST NOT 创建别的目录） |
 | 13 | 🔴 **调度 goroutine 生命周期**：`NewRotatingWriter` 至多拉起 **1 个**后台 goroutine（每天 00:05 做 prune + 空闲自轮转）。`Close()` 的语义 MUST = 「停止调度 goroutine（close done channel 或 ctx cancel）+ **等待其退出** + 刷盘关闭当前文件」。原设计 `Close()` 只关文件 ⇒ 测试里每个 `NewRotatingWriter` 泄漏一个 goroutine，`goleak`/`-race` 会挂；生产里优雅停机也没有可停的句柄。归属：goroutine 由 `RotatingWriter` 拥有、由 `Close()` 回收，写进 §8 DoD |
 | 14 | `droppedLines` 用 `int64` 计数（要求 5③），`Stats()` 或直接字段暴露给 A-02 的事件封装层；`log.rotate` 与 app.stop 事件 MUST 带 `dropped_lines` |
