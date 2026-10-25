@@ -56,6 +56,7 @@ have A "CODE_OF_CONDUCT.md" 'grep -q "Contributor Covenant" CODE_OF_CONDUCT.md'
 have A ".gitignore"       'grep -q "Config/.env" .gitignore'
 have A "go.mod"           'grep -q "^module github.com/LseKit/DeepSeekSearch$" go.mod'
 have A "Makefile"         'grep -qE "^VERSION[[:space:]]*:=" Makefile'
+have A ".env.example"     'grep -q "DEEPSEEK_API_KEY=" .env.example && ! grep -qE "sk-[A-Za-z0-9]{8,}" .env.example'
 have A "config.example.toml" '! grep -qE "(^|[^A-Za-z0-9])sk-[A-Za-z0-9]" config.example.toml'
 have A "go.sum"
 

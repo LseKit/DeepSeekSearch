@@ -43,8 +43,9 @@ install -m 0755 DeepSeekSearch_<version>_linux_amd64 Bin/DeepSeekSearch
 cp config.example.toml Config/config.toml
 
 # 3. 填 Key（.env 的 group/other 必须无任何权限，即 600 或更严的 400，否则拒绝启动）
-printf 'DEEPSEEK_API_KEY=%s\n' 'sk-你的key' > Config/.env
+cp .env.example Config/.env
 chmod 600 Config/.env
+#    然后编辑 Config/.env，在 DEEPSEEK_API_KEY= 后面补上你的 Key
 
 # 4. 校验配置（不建目录、不起服务）
 ./Bin/DeepSeekSearch -check -config Config/config.toml
